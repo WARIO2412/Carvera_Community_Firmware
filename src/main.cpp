@@ -57,9 +57,6 @@
 #include "libs/Watchdog.h"
 
 #include "version.h"
-#include "system_LPC17xx.h"
-
-#include "mbed.h"
 
 // disable MSD
 #define DISABLEMSD
@@ -138,8 +135,6 @@ ZProbe zprobe __attribute__((section("AHBSRAM")));
 RotaryDeltaCalibration rotary_delta_calibration __attribute__((section("AHBSRAM")));
 TemperatureSwitch temperature_switch __attribute__((section("AHBSRAM")));
 Drillingcycles drilling_cycles __attribute__((section("AHBSRAM")));
-
-serial_t console;
 
 void init() {
     // Default pins to low status
@@ -284,9 +279,6 @@ StackType_t mainLoopStackBuffer[MAINLOOP_STACK_SIZE] __attribute__((section("AHB
 StaticTask_t mainLoopTaskBuffer __attribute__((section("AHBSRAM")));
 
 int main() {
-    serial_init(&console, P2_8, P2_9);
-    serial_baud(&console, DEFAULT_SERIAL_BAUD_RATE);
-
     NVIC_SetVector(SVCall_IRQn, (uint32_t)vPortSVCHandler);
     NVIC_SetVector(PendSV_IRQn, (uint32_t)xPortPendSVHandler);
     NVIC_SetVector(SysTick_IRQn, (uint32_t)xPortSysTickHandler);
