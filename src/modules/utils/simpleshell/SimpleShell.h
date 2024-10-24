@@ -101,7 +101,5 @@ private:
     XModem xmodem;
     Configurator      configurator;
 
-    char md5_str[64];
-
     SoftTimer resetTimer;
 };
