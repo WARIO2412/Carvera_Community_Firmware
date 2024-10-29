@@ -402,6 +402,13 @@ void Player::on_gcode_received(void *argument)
             this->end_of_file();
 
         } else if (gcode->m == 118) { // print remainder of string to console
+            if (gcode->subcode == 1){
+                if (gcode->has_letter('P')) {
+                    THEKERNEL->streams->printf("result = %.3f \n", gcode->get_value('P'));
+                    return;
+                }
+            }
+
             THEKERNEL->streams->printf("%s \n", gcode->get_command() + 4);
 
         } else if (gcode->m == 600) { // suspend print, Not entirely Marlin compliant, M600.1 will leave the heaters on
