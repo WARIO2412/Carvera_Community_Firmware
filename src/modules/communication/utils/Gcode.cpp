@@ -176,6 +176,21 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
             return 0;
+        
+        } else if(var_num == 150)
+        {
+            return THEKERNEL->probe_tip_diameter;
+        } else if(var_num >= 151 && var_num <= 155)
+        {
+            if (THEKERNEL->probe_outputs[var_num - 151] > -100000)
+            {
+                return THEKERNEL->probe_outputs[var_num - 151];
+            }
+            this->stream->printf("Variable %d not set \n", var_num);
+            THEKERNEL->call_event(ON_HALT, nullptr);
+            THEKERNEL->set_halt_reason(MANUAL);
+            return 0;
+
         } else if(var_num >= 501 && var_num <= 520)
         {
             if (THEKERNEL->eeprom_data->perm_vars[var_num - 501] > -100000)
@@ -261,7 +276,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
                     break;
                 #endif
                 case 5041: //current WCS X position
-                     THEROBOT->get_current_machine_position(mpos);
+                    THEROBOT->get_current_machine_position(mpos);
                     // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
                     if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, false); // get inverse compensation transform
                     pos= THEROBOT->mcs2wcs(mpos);
