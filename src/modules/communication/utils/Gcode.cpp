@@ -101,64 +101,68 @@ int Gcode::index_of_letter( char letter, int start ) const
 }
 */
 
-float Gcode::set_variable_value() const{
+float Gcode::set_variable_value() const {
     // Expecting a number after the `#` from 1-20, like #12
     const char* expr = this->get_command();
     if (*expr == '#') {
         char* endptr;
         float value = 0;
         int var_num = strtol(expr + 1, &endptr, 10); 
-        
-        while (*endptr == ' ')
-        {
+
+        // Skip whitespace
+        while (*endptr == ' ') {
             endptr++;
         }
 
-        if (*endptr == '=')
-        {
-            endptr++;
-            while (*endptr == ' ') //skip whitespace
-            {
+        // Check if the next character is '=' indicating an assignment
+        if (*endptr == '=') {
+            endptr++; // Move past '='
+            while (*endptr == ' ') { // Skip whitespace after '='
                 endptr++;
             }
-            value = evaluate_expression(endptr, &endptr);
-        }
-        else
-        {  
+
+            value = evaluate_expression(endptr, &endptr); // Evaluate the expression on the right
+
+            // Check if the expression evaluated to NAN
+            if ((value != value)) {
+                this->stream->printf("Error in expression evaluation, cannot set variable %d\n", var_num);
+                return NAN; // Stop execution and do not set the variable
+            }
+        } else {
+            // If it's not an assignment, get the variable value
             const char* temp_expr = expr;  // Temporary variable for safe parsing
-            value = this->get_variable_value(expr, (char**)&temp_expr);
-            
-            if (value > -100000){
-                this->stream->printf("variable %d = %.4f \n", var_num , value);
+            value = this->get_variable_value(expr, (char**)&temp_expr); // Get the current value of the variable
+
+            // Check if the retrieved value is valid
+            if (value == value) {
+                this->stream->printf("Variable %d = %.4f \n", var_num, value);
+            } else {
+                // If the variable is not set, return early
+                return NAN;
             }
-            else
-            {
-                this->stream->printf("variable %d not set \n", var_num);
-                THEKERNEL->call_event(ON_HALT, nullptr);
-                THEKERNEL->set_halt_reason(MANUAL);
-                return 0;
-                
-            }
-            return 0;
+            return NAN; // End the function since we only want to get the value, not set it
         }
 
+        // Proceed to set the variable if it's valid
         if (var_num >= 101 && var_num <= 120) {
-            THEKERNEL->local_vars[var_num -101] = value;
-            this->stream->printf("Variable %d set %.4f \n", var_num,value);
+            THEKERNEL->local_vars[var_num - 101] = value; // Set local variable
+            this->stream->printf("Variable %d set %.4f \n", var_num, value);
             return value;
-        } else if(var_num >= 501 && var_num <= 520)
-        {
-            THEKERNEL->eeprom_data->perm_vars[var_num - 501] = value;
-            THEKERNEL->write_eeprom_data();
-            this->stream->printf("Variable %d set  %.4f \n", var_num , value);
+        } else if (var_num >= 501 && var_num <= 520) {
+            THEKERNEL->eeprom_data->perm_vars[var_num - 501] = value; // Set permanent variable
+            THEKERNEL->write_eeprom_data(); // Save to EEPROM
+            this->stream->printf("Variable %d set %.4f \n", var_num, value);
             return value;
-        }else //system variables
-        {
+        } else {
+            // If the variable number is out of the expected range, print an error
+            this->stream->printf("Variable not found \n");
+            return NAN; // Variable not found
         }
     }
+
+    // If the input doesn't start with '#', print an error message
     this->stream->printf("Variable not found \n");
-    return 0;
-    
+    return 0; // Default return value
 }
 
 
@@ -175,7 +179,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             this->stream->printf("Variable %d not set \n", var_num);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
         
         } else if(var_num == 150)
         {
@@ -189,7 +193,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             this->stream->printf("Variable %d not set \n", var_num);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
 
         } else if(var_num >= 501 && var_num <= 520)
         {
@@ -200,7 +204,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             this->stream->printf("Variable %d not set \n", var_num);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
         }else //system variables
         {
             float mpos[3];
@@ -449,7 +453,7 @@ float Gcode::parse_factor(const char*& expr) const {
             this->stream->printf("Invalid number in expression, %c\n", expr);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
         }
         expr = end;
     }
