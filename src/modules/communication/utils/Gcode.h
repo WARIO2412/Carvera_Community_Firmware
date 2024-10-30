@@ -65,5 +65,8 @@ class Gcode {
     private:
         void prepare_cached_values(bool strip=true);
         char *command;
+        float parse_expression(const char*& expr) const;
+        float parse_term(const char*& expr) const;
+        float parse_factor(const char*& expr) const;
 };
 #endif
