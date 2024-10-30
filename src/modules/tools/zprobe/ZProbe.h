@@ -66,6 +66,7 @@ private:
     float probe_height;
     float max_z;
     float dwell_before_probing;
+    
 
     Pin pin;
     Pin calibrate_pin;
