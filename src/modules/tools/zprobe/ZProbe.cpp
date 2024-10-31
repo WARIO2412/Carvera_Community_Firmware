@@ -374,10 +374,10 @@ void ZProbe::on_gcode_received(void *argument)
 
     } else if(gcode->has_g && gcode->g == 38 ) { // G38.2 Straight Probe with error, G38.3 straight probe without error
         // linuxcnc/grbl style probe http://www.linuxcnc.org/docs/2.5/html/gcode/gcode.html#sec:G38-probe
-        //if(gcode->subcode < 2 || gcode->subcode > 9) {
-        //    gcode->stream->printf("Error :Only G38.2 to G38.20 are supported\n");
-        //    return;
-        //}
+        if(gcode->subcode < 2 || gcode->subcode > 6) {
+            gcode->stream->printf("Error :Only G38.2 to G38.5 are supported\n");
+            return;
+        }
 
         // make sure the probe is defined and not already triggered before moving motors
         if(!this->pin.connected()) {
@@ -390,25 +390,10 @@ void ZProbe::on_gcode_received(void *argument)
         } else {
             invert_probe = false;
         }
-        THEKERNEL->streams->printf("Probe Command Found %i \n",gcode->subcode);
+
         if (gcode->subcode == 6) {
             calibrate_Z(gcode);
-
-        }else if(gcode->subcode == 10) {
-            probe_bore(gcode);
-        }else if(gcode->subcode == 11) {
-            probe_boss(gcode);
-        }else if(gcode->subcode == 12) {
-            probe_insideCorner(gcode);
-        }else if(gcode->subcode == 13) {
-            probe_outsideCorner(gcode);
-        }else if(gcode->subcode == 14) {
-            probe_axisangle(gcode);
-        
-
-        
-        } else if (gcode->subcode < 6){
-            THEKERNEL->streams->printf("Standard Probe\n");
+        } else {
             probe_XYZ(gcode);
         }
 
@@ -428,6 +413,21 @@ void ZProbe::on_gcode_received(void *argument)
 
             case 460:
                 calibrate_probe_bore(gcode);
+                break;
+            case 461:
+                probe_bore(gcode);
+                break;
+            case 462:
+                probe_boss(gcode);
+                break;
+            case 463:
+                probe_insideCorner(gcode);
+                break;
+            case 464:
+                probe_outsideCorner(gcode);
+                break;
+            case 465:
+                probe_axisangle(gcode);
                 break;
             case 670:
                 if (gcode->has_letter('S')) this->slow_feedrate = gcode->get_value('S');
@@ -467,6 +467,7 @@ bool ZProbe::probe_XYZ(Gcode *gcode)
     if(gcode->has_letter('X')) {
         x= gcode->get_value('X');
     }
+    
 
     if(gcode->has_letter('Y')) {
         y= gcode->get_value('Y');
@@ -701,6 +702,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     int repeat = 1;
     float retract_distance = 1.5;
     float clearance_height = 2;
+    invert_probe = false;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
     float moveBuffer[3];
@@ -770,6 +772,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             THECONVEYOR->wait_for_idle();
         }
+        delete gcodeBuffer;
     }
 
     float sin_angle = sin(roation_angle*pi/180);
@@ -822,6 +825,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //move off the surface
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -831,6 +835,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -846,6 +851,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(2*x_negative_x), THEROBOT->from_millimeters(2*x_negative_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //move off the surface
             moveBuffer[0] = -retractx;
             moveBuffer[1] = -retracty;
@@ -855,6 +861,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_negative_x), THEROBOT->from_millimeters(x_negative_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -881,6 +888,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //move off the surface
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -890,6 +898,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -905,6 +914,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //move off the surface
             moveBuffer[0] = -retractx;
             moveBuffer[1] = -retracty;
@@ -914,6 +924,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -945,7 +956,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     
 }
 
-void ZProbe::probe_boss(Gcode *gcode) //G38.11
+void ZProbe::probe_boss(Gcode *gcode) //M461
 {
     THECONVEYOR->wait_for_idle();
     THEKERNEL->streams->printf("Probing Boss or Rectangular Block\n");
@@ -961,6 +972,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
     float clearance_height = 2;
     float side_depth = 2;
     float clearance_world_pos;
+    invert_probe = false;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
     float moveBuffer[3];
@@ -1032,6 +1044,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             THECONVEYOR->wait_for_idle();
         }
+        delete gcodeBuffer;
     }
 
     float sin_angle = sin(roation_angle*pi/180);
@@ -1092,8 +1105,10 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
             //probe z no hit no alarm -side_depth, retract slightly if probe point hit - G38.3, retract if true
             std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1103,10 +1118,12 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 moveBuffer[2] = THEROBOT->from_millimeters(1);
                 THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             }
+            delete gcodeBuffer;
             // probe alarm x_negative - G38.2
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_negative_x), THEROBOT->from_millimeters(x_negative_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract x_positive
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -1116,6 +1133,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_negative_x), THEROBOT->from_millimeters(x_negative_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1142,8 +1160,10 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
             //probe z no hit no alarm -side_depth, retract slightly if probe point hit
             std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1153,10 +1173,12 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 moveBuffer[2] = THEROBOT->from_millimeters(1);
                 THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             }
+            delete gcodeBuffer;
             // probe alarm x_positive
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract x_negative
             moveBuffer[0] = -retractx;
             moveBuffer[1] = -retracty;
@@ -1166,6 +1188,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1203,8 +1226,10 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
             //probe z no hit no alarm -side_depth, retract slightly if probe point hit - G38.3, retract if true
             std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1214,10 +1239,12 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 moveBuffer[2] = THEROBOT->from_millimeters(1);
                 THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             }
+            delete gcodeBuffer;
             // probe alarm y_negative - G38.2
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract y_positive
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -1227,6 +1254,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1253,8 +1281,10 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
             //probe z no hit no alarm -side_depth, retract slightly if probe point hit
             std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1264,10 +1294,12 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
                 moveBuffer[2] = THEROBOT->from_millimeters(1);
                 THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             }
+            delete gcodeBuffer;
             // probe alarm y_positive
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract y_negative
             moveBuffer[0] = -retractx;
             moveBuffer[1] = -retracty;
@@ -1277,6 +1309,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1315,7 +1348,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
     }
 }
 
-void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
+void ZProbe::probe_insideCorner(Gcode *gcode) //M462
 {
     THECONVEYOR->wait_for_idle();
     THEKERNEL->streams->printf("Probing Inside Corner\n");
@@ -1327,6 +1360,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
     float y_axis_distance = 20;
     float roation_angle = 0;
     int repeat = 1;
+    invert_probe = false;
 
     float retract_distance = 1.5;
     float clearance_height = 2;
@@ -1399,6 +1433,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             THECONVEYOR->wait_for_idle();
         }
+        delete gcodeBuffer;
     }
 
     float sin_angle = sin(roation_angle*pi/180);
@@ -1440,6 +1475,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //move off the surface
         moveBuffer[0] = retractx;
         moveBuffer[1] = retracty;
@@ -1449,6 +1485,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), slowZprobeRate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //store position
         THEROBOT->get_current_machine_position(mpos);
         memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1468,6 +1505,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //move off the surface
         moveBuffer[0] = retractx;
         moveBuffer[1] = retracty;
@@ -1477,6 +1515,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), slowZprobeRate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //store position
         THEROBOT->get_current_machine_position(mpos);
         memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1509,7 +1548,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         THEROBOT->set_current_wcs_by_mpos( THEKERNEL->probe_outputs[3], THEKERNEL->probe_outputs[4], NAN);
     }
 }
-void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
+void ZProbe::probe_outsideCorner(Gcode *gcode) //M463
 {
     THECONVEYOR->wait_for_idle();
     THEKERNEL->streams->printf("Probing Boss or Rectangular Block\n");
@@ -1525,6 +1564,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
     float clearance_height = 2;
     float side_depth = 2;
     float clearance_world_pos;
+    invert_probe = false;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
     float moveBuffer[3];
@@ -1596,6 +1636,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             THECONVEYOR->wait_for_idle();
         }
+        delete gcodeBuffer;
     }
 
     float sin_angle = sin(roation_angle*pi/180);
@@ -1648,8 +1689,10 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
             gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(PROBE_FAIL);
+            delete gcodeBuffer;
             return;
         }
+        delete gcodeBuffer;
         //probe z no hit no alarm -side_depth, retract slightly if probe point hit - G38.3, retract if true
         std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1659,10 +1702,12 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
             moveBuffer[2] = THEROBOT->from_millimeters(1);
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
         }
+        delete gcodeBuffer;
         // probe alarm x_negative - G38.2
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_negative_x), THEROBOT->from_millimeters(x_negative_y), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //retract x_positive
         moveBuffer[0] = retractx;
         moveBuffer[1] = retracty;
@@ -1672,6 +1717,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_negative_x), THEROBOT->from_millimeters(x_negative_y), slowZprobeRate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //store position
         THEROBOT->get_current_machine_position(mpos);
         memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1699,8 +1745,10 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
             gcode->stream->printf("ALARM: Probe hit wall when moving to outer position\n");
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(PROBE_FAIL);
+            delete gcodeBuffer;
             return;
         }
+        delete gcodeBuffer;
         //probe z no hit no alarm -side_depth, retract slightly if probe point hit - G38.3, retract if true
         std::sprintf(buff, "G38.3 Z%.3f F%.3f", THEROBOT->from_millimeters(-(side_depth + clearance_height)), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
@@ -1710,10 +1758,12 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
             moveBuffer[2] = THEROBOT->from_millimeters(1);
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
         }
+        delete gcodeBuffer;
         // probe alarm y_negative - G38.2
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //retract y_positive
         retractx = THEROBOT->from_millimeters((y_axis_distance>= 0 ? 1.0f : -1.0f) * retract_distance * sin_angle);
         retracty = THEROBOT->from_millimeters((y_axis_distance>= 0 ? 1.0f : -1.0f) * retract_distance * -cos_angle);
@@ -1726,6 +1776,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_negative_x), THEROBOT->from_millimeters(y_negative_y), slowZprobeRate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //store position
         THEROBOT->get_current_machine_position(mpos);
         memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1769,7 +1820,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         THEROBOT->set_current_wcs_by_mpos( THEKERNEL->probe_outputs[3], THEKERNEL->probe_outputs[4], NAN);
     }
 }
-void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
+void ZProbe::probe_axisangle(Gcode *gcode) //M464
 {
     THECONVEYOR->wait_for_idle();
     THEKERNEL->streams->printf("Probing 2 points to find an angle\n");
@@ -1784,6 +1835,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
     float retract_distance = 1.5;
     float clearance_height = 2;
     float side_depth = -30;
+    invert_probe = false;
 
     Gcode *gcodeBuffer;
     float moveBuffer[3];
@@ -1860,6 +1912,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             THEROBOT->delta_move(moveBuffer, feed_rate, 3);
             THECONVEYOR->wait_for_idle();
         }
+        delete gcodeBuffer;
     }
 
     float sin_angle = sin(roation_angle*pi/180);
@@ -1907,6 +1960,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -1917,6 +1971,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1941,13 +1996,16 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
                 gcode->stream->printf("ALARM: Probe hit wall when moving to second position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
 
             //probe along y axis to find second point
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -1957,6 +2015,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(y_positive_x), THEROBOT->from_millimeters(y_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -1992,6 +2051,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -2002,6 +2062,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -2026,13 +2087,16 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
                 gcode->stream->printf("ALARM: Probe hit wall when moving to second position\n");
                 THEKERNEL->call_event(ON_HALT, nullptr);
                 THEKERNEL->set_halt_reason(PROBE_FAIL);
+                delete gcodeBuffer;
                 return;
             }
+            delete gcodeBuffer;
 
             //probe along x axis to find second point
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), feed_rate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //retract
             moveBuffer[0] = retractx;
             moveBuffer[1] = retracty;
@@ -2042,6 +2106,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             std::sprintf(buff, "G38.2 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(x_positive_x), THEROBOT->from_millimeters(x_positive_y), slowZprobeRate);
             gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
             probe_XYZ(gcodeBuffer);
+            delete gcodeBuffer;
             //store position
             THEROBOT->get_current_machine_position(mpos);
             memcpy(old_mpos, mpos, sizeof(mpos));
@@ -2077,13 +2142,14 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
         std::sprintf(buff, "G38.3 X%.3f Y%.3f F%.3f", THEROBOT->from_millimeters(visualize_path_distance), THEROBOT->from_millimeters(visualize_path_distance * tan(THEKERNEL->probe_outputs[2])), feed_rate);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_XYZ(gcodeBuffer);
+        delete gcodeBuffer;
         //return to center position
         THECONVEYOR->wait_for_idle();
         coordinated_move(center_x, center_y, NAN, rapid_rate );
     }
 }
 
-void ZProbe::calibrate_probe_bore(Gcode *gcode)
+void ZProbe::calibrate_probe_bore(Gcode *gcode) //M460
 {
     THECONVEYOR->wait_for_idle();
     THEKERNEL->streams->printf("Probing Bore/Rectangular Pocket\n");
@@ -2144,6 +2210,7 @@ void ZProbe::calibrate_probe_bore(Gcode *gcode)
         std::sprintf(buff, "G38.10 X%.3f Y%.3f F%.3f D0 Q%3f K%.3f R%3f", THEROBOT->from_millimeters(knownDiameter + 2), THEROBOT->from_millimeters(knownDiameter + 2), feed_rate,roation_angle,rapid_rate,retract_distance);
         gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
         probe_bore(gcodeBuffer);
+        delete gcodeBuffer;
         THECONVEYOR->wait_for_idle();
         probe_position_stack.push_back(THEKERNEL->probe_outputs[0]);
         probe_position_stack.push_back(THEKERNEL->probe_outputs[1]);
