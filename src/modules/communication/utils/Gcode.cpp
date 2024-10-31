@@ -101,64 +101,81 @@ int Gcode::index_of_letter( char letter, int start ) const
 }
 */
 
-float Gcode::set_variable_value() const{
+float Gcode::set_variable_value() const {
     // Expecting a number after the `#` from 1-20, like #12
     const char* expr = this->get_command();
     if (*expr == '#') {
         char* endptr;
         float value = 0;
         int var_num = strtol(expr + 1, &endptr, 10); 
-        
-        while (*endptr == ' ')
-        {
+
+        // Skip whitespace
+        while (*endptr == ' ') {
             endptr++;
         }
 
-        if (*endptr == '=')
-        {
-            endptr++;
-            while (*endptr == ' ') //skip whitespace
-            {
+        // Check if the next character is '=' indicating an assignment
+        if (*endptr == '=') {
+            endptr++; // Move past '='
+            while (*endptr == ' ') { // Skip whitespace after '='
                 endptr++;
             }
-            value = evaluate_expression(endptr, &endptr);
-        }
-        else
-        {  
+
+            value = evaluate_expression(endptr, &endptr); // Evaluate the expression on the right
+
+            // Check if the expression evaluated to NAN
+            if ((value != value)) {
+                this->stream->printf("Error in expression evaluation, cannot set variable %d\n", var_num);
+                return NAN; // Stop execution and do not set the variable
+            }
+        } else {
+            // If it's not an assignment, get the variable value
             const char* temp_expr = expr;  // Temporary variable for safe parsing
-            value = this->get_variable_value(expr, (char**)&temp_expr);
-            
-            if (value > -100000){
-                this->stream->printf("variable %d = %.4f \n", var_num , value);
+            value = this->get_variable_value(expr, (char**)&temp_expr); // Get the current value of the variable
+
+            // Check if the retrieved value is valid
+            if (value == value) {
+                this->stream->printf("Variable %d = %.4f \n", var_num, value);
+            } else {
+                // If the variable is not set, return early
+                return NAN;
             }
-            else
-            {
-                this->stream->printf("variable %d not set \n", var_num);
-                THEKERNEL->call_event(ON_HALT, nullptr);
-                THEKERNEL->set_halt_reason(MANUAL);
-                return 0;
-                
-            }
-            return 0;
+            return NAN; // End the function since we only want to get the value, not set it
         }
 
+        // Proceed to set the variable if it's valid
         if (var_num >= 101 && var_num <= 120) {
-            THEKERNEL->local_vars[var_num -101] = value;
-            this->stream->printf("Variable %d set %.4f \n", var_num,value);
+            THEKERNEL->local_vars[var_num - 101] = value; // Set local variable
+            this->stream->printf("Variable %d set %.4f \n", var_num, value);
             return value;
-        } else if(var_num >= 501 && var_num <= 520)
-        {
-            THEKERNEL->eeprom_data->perm_vars[var_num - 501] = value;
-            THEKERNEL->write_eeprom_data();
-            this->stream->printf("Variable %d set  %.4f \n", var_num , value);
+        }else if(var_num == 150)
+        {  
+            if (value > 0 && value < 10){
+                THEKERNEL->probe_tip_diameter = value;
+                this->stream->printf("Probe tip diameter set %.4f \n", value);
+                this->stream->printf("This value is temporary \n it will neeed to be saved to the config file with \n");
+                this->stream->printf("config-set sd zprobe.probe_tip_diameter # \n");
+                return value;
+            }
+            else{
+                this->stream->printf("Probe tip input out of range, aborting \n", var_num);
+                return NAN;
+            }
+        } else if (var_num >= 501 && var_num <= 520) {
+            THEKERNEL->eeprom_data->perm_vars[var_num - 501] = value; // Set permanent variable
+            THEKERNEL->write_eeprom_data(); // Save to EEPROM
+            this->stream->printf("Variable %d set %.4f \n", var_num, value);
             return value;
-        }else //system variables
-        {
+        } else {
+            // If the variable number is out of the expected range, print an error
+            this->stream->printf("Variable not found \n");
+            return NAN; // Variable not found
         }
     }
+
+    // If the input doesn't start with '#', print an error message
     this->stream->printf("Variable not found \n");
-    return 0;
-    
+    return 0; // Default return value
 }
 
 
@@ -175,7 +192,22 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             this->stream->printf("Variable %d not set \n", var_num);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
+        
+        } else if(var_num == 150)
+        {
+            return THEKERNEL->probe_tip_diameter;
+        } else if(var_num >= 151 && var_num <= 155)
+        {
+            if (THEKERNEL->probe_outputs[var_num - 151] > -100000)
+            {
+                return THEKERNEL->probe_outputs[var_num - 151];
+            }
+            this->stream->printf("Variable %d not set \n", var_num);
+            THEKERNEL->call_event(ON_HALT, nullptr);
+            THEKERNEL->set_halt_reason(MANUAL);
+            return NAN;
+
         } else if(var_num >= 501 && var_num <= 520)
         {
             if (THEKERNEL->eeprom_data->perm_vars[var_num - 501] > -100000)
@@ -185,7 +217,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
             this->stream->printf("Variable %d not set \n", var_num);
             THEKERNEL->call_event(ON_HALT, nullptr);
             THEKERNEL->set_halt_reason(MANUAL);
-            return 0;
+            return NAN;
         }else //system variables
         {
             float mpos[3];
@@ -261,7 +293,7 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
                     break;
                 #endif
                 case 5041: //current WCS X position
-                     THEROBOT->get_current_machine_position(mpos);
+                    THEROBOT->get_current_machine_position(mpos);
                     // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
                     if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, false); // get inverse compensation transform
                     pos= THEROBOT->mcs2wcs(mpos);
@@ -302,63 +334,164 @@ float Gcode::get_variable_value(const char* expr, char** endptr) const{
     return 0;
 }
 
-// Evaluate gcode values containing math and variable calls
-float Gcode::evaluate_expression(const char* expr, char** endptr) const {
-    while (isspace(*expr)) expr++;  // Skip leading whitespace
+float Gcode::parse_expression(const char*& expr) const {
+    float result = parse_term(expr);
 
-    float result;
-    if (*expr == '#') {  // if the line starts with #, get variable value
-        result = this->get_variable_value(expr, endptr);
-    } else {
-        result = strtof(expr, endptr);
-    }
-
-    while (*endptr && **endptr) {
-        // Skip any whitespace between numbers/operators
-        while (isspace(**endptr)) (*endptr)++;
-							
-					 
-
-        char op = **endptr;  // Get the operator
-        (*endptr)++;         // Move past the operator
-
-        // Skip any whitespace after the operator
-        while (isspace(**endptr)) (*endptr)++;
-
-        float next_val;
-        if (**endptr == '#') {
-            next_val = this->get_variable_value(*endptr, endptr);
+    while (*expr == '+' || *expr == '-') {
+        char op = *expr;
+        expr++; // Skip operator
+        float next_term = parse_term(expr);
+        if (op == '+') {
+            result += next_term;
         } else {
-            // Handle negative numbers or numbers with a leading sign
-            next_val = strtof(*endptr, endptr);
+            result -= next_term;
         }
-
-        // Perform the operation
-        switch (op) {
-            case '+':
-                result += next_val;
-                break;
-            case '-':
-                result -= next_val;
-                break;
-            case '*':
-                result *= next_val;
-                break;
-            case '/':
-                if (next_val != 0)  // Avoid division by zero
-                    result /= next_val;
-                break;
-					 
-					  
-            default:
-                // If it's an unrecognized operator, stop parsing
-                return result;
-        }
-		
     }
     return result;
 }
 
+float Gcode::parse_term(const char*& expr) const {
+    float result = parse_factor(expr);
+
+    while (*expr == '*' || *expr == '/' || *expr == 'x') {
+        char op = *expr;
+        expr++; // Skip operator
+        float next_factor = parse_factor(expr);
+        if (op == '*' || op == 'x') {
+            result *= next_factor;
+        } else {
+            if (next_factor != 0) {
+                result /= next_factor;
+            } else {
+                this->stream->printf("Division by zero\n");
+                THEKERNEL->call_event(ON_HALT, nullptr);
+                THEKERNEL->set_halt_reason(MANUAL);
+                return NAN;
+            }
+        }
+    }
+    return result;
+}
+
+float Gcode::parse_factor(const char*& expr) const {
+    while (isspace(*expr)) expr++; // Skip whitespace
+
+    float result;
+
+    // Check for function names with nested parsing
+    if (strncmp(expr, "SIN", 3) == 0 || strncmp(expr, "COS", 3) == 0 || strncmp(expr, "TAN", 3) == 0 ||
+        strncmp(expr, "ASIN", 4) == 0 || strncmp(expr, "ACOS", 4) == 0 || strncmp(expr, "ATAN", 4) == 0 ||
+        strncmp(expr, "SQRT", 4) == 0 || strncmp(expr, "ABS", 3) == 0 || strncmp(expr, "ROUND", 5) == 0 ||
+        strncmp(expr, "FIX", 3) == 0 || strncmp(expr, "FUP", 3) == 0 || strncmp(expr, "LN", 2) == 0 ||
+        strncmp(expr, "RAD", 3) == 0) 
+    {
+        const char* func_name = expr;
+
+        // Adjust expr pointer based on function name length
+        if (strncmp(func_name, "ASIN", 4) == 0 || strncmp(func_name, "ACOS", 4) == 0 || strncmp(func_name, "ATAN", 4) == 0 || strncmp(func_name, "SQRT", 4) == 0){
+            expr += 4;
+        } else if (strncmp(func_name, "ROUND", 5) == 0) {
+            expr += 5;
+        } else if (strncmp(func_name, "LN", 2) == 0) {
+            expr += 2;
+        } else {
+            expr += 3; // For 3-character functions
+        }
+
+        if (*expr == '[') {
+            expr++; // Skip '['
+            float arg = parse_expression(expr); // Parse inner expression fully
+
+            if (*expr == ']') {
+                expr++; // Skip ']'
+
+                const float DEG_TO_RAD = 3.141592653589793238463 / 180.0;
+
+                if (strncmp(func_name, "SIN", 3) == 0) {
+                    result = sin(arg * DEG_TO_RAD);
+                } else if (strncmp(func_name, "COS", 3) == 0) {
+                    result = cos(arg * DEG_TO_RAD);
+                } else if (strncmp(func_name, "TAN", 3) == 0) {
+                    result = tan(arg * DEG_TO_RAD);
+                } else if (strncmp(func_name, "ASIN", 4) == 0) {
+                    result = asin(arg) / DEG_TO_RAD;
+                } else if (strncmp(func_name, "ACOS", 4) == 0) {
+                    result = acos(arg) / DEG_TO_RAD;
+                } else if (strncmp(func_name, "ATAN", 4) == 0) {
+                    result = atan(arg) / DEG_TO_RAD;
+                } else if (strncmp(func_name, "SQRT", 4) == 0) {
+                    result = sqrt(arg);
+                } else if (strncmp(func_name, "ABS", 3) == 0) {
+                    result = fabs(arg);
+                } else if (strncmp(func_name, "ROUND", 5) == 0) {
+                    result = round(arg);
+                } else if (strncmp(func_name, "FIX", 3) == 0) {
+                    result = floor(arg);
+                } else if (strncmp(func_name, "FUP", 3) == 0) {
+                    result = ceil(arg);
+                } else if (strncmp(func_name, "LN", 2) == 0) {
+                    result = log(arg);
+                } else if (strncmp(func_name, "RAD", 3) == 0) {
+                    result = arg * DEG_TO_RAD; // Convert degrees to radians
+                }
+            } else {
+                this->stream->printf("Mismatched brackets in function argument\n");
+                THEKERNEL->call_event(ON_HALT, nullptr);
+                THEKERNEL->set_halt_reason(MANUAL);
+                return NAN;
+            }
+        } else {
+            this->stream->printf("Expected '[' after function name\n");
+            THEKERNEL->call_event(ON_HALT, nullptr);
+            THEKERNEL->set_halt_reason(MANUAL);
+            return NAN;
+        }
+    } else if (*expr == '[') {
+        expr++; // Skip '['
+        result = parse_expression(expr);
+        if (*expr == ']') {
+            expr++; // Skip ']'
+        } else {
+            this->stream->printf("Mismatched brackets in expression\n");
+            THEKERNEL->call_event(ON_HALT, nullptr);
+            THEKERNEL->set_halt_reason(MANUAL);
+            return NAN;
+        }
+    } else if (*expr == '#') {
+        result = this->get_variable_value(expr, const_cast<char**>(&expr));
+    } else {
+        char* end;
+        result = strtof(expr, &end);
+        if (end == expr) {
+            this->stream->printf("Invalid number in expression, %c\n", expr);
+            THEKERNEL->call_event(ON_HALT, nullptr);
+            THEKERNEL->set_halt_reason(MANUAL);
+            return NAN;
+        }
+        expr = end;
+    }
+
+    // Handle exponentiation
+    while (*expr == '^') {
+        expr++;
+        float exponent = parse_factor(expr);
+        result = pow(result, exponent);
+    }
+
+    return result;
+}
+
+
+
+
+float Gcode::evaluate_expression(const char* expr, char** endptr) const {
+    while (isspace(*expr)) expr++; // Skip leading whitespace
+    float result = parse_expression(expr);
+    if (endptr) {
+        *endptr = const_cast<char*>(expr); // Set endptr to the current position
+    }
+    return result;
+}
 
 // Retrieve the value for a given letter
 float Gcode::get_value( char letter, char **ptr ) const

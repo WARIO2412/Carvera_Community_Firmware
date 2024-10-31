@@ -56,7 +56,7 @@ class Gcode {
             bool has_g:1;
             bool stripped:1;
             bool is_error:1;
-            uint8_t subcode:5;
+            uint8_t subcode:3;
         };
 
         StreamOutput* stream;
@@ -65,5 +65,8 @@ class Gcode {
     private:
         void prepare_cached_values(bool strip=true);
         char *command;
+        float parse_expression(const char*& expr) const;
+        float parse_term(const char*& expr) const;
+        float parse_factor(const char*& expr) const;
 };
 #endif
