@@ -390,10 +390,12 @@ void ZProbe::on_gcode_received(void *argument)
         } else {
             invert_probe = false;
         }
-
+        THEKERNEL->streams->printf("Probe Command Found %i \n",gcode->subcode);
         if (gcode->subcode == 6) {
             calibrate_Z(gcode);
-        } else {
+
+        } else if (gcode->subcode < 6){
+            THEKERNEL->streams->printf("Standard Probe\n");
             probe_XYZ(gcode);
         }
 
@@ -702,7 +704,6 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     int repeat = 1;
     float retract_distance = 1.5;
     float clearance_height = 2;
-    invert_probe = false;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
     float moveBuffer[3];
@@ -972,7 +973,6 @@ void ZProbe::probe_boss(Gcode *gcode) //M461
     float clearance_height = 2;
     float side_depth = 2;
     float clearance_world_pos;
-    invert_probe = false;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
     float moveBuffer[3];
@@ -1360,7 +1360,6 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //M462
     float y_axis_distance = 20;
     float roation_angle = 0;
     int repeat = 1;
-    invert_probe = false;
 
     float retract_distance = 1.5;
     float clearance_height = 2;
@@ -1835,7 +1834,6 @@ void ZProbe::probe_axisangle(Gcode *gcode) //M464
     float retract_distance = 1.5;
     float clearance_height = 2;
     float side_depth = -30;
-    invert_probe = false;
 
     Gcode *gcodeBuffer;
     float moveBuffer[3];
