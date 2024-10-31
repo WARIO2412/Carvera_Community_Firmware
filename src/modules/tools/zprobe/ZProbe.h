@@ -53,6 +53,7 @@ private:
     void probe_insideCorner(Gcode *gcode);
     void probe_outsideCorner(Gcode *gcode);
     void probe_axisangle(Gcode *gcode);
+    void calibrate_probe_bore(Gcode *gcode);
     
 
     void calibrate_Z(Gcode *gc);

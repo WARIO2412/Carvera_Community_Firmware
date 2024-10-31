@@ -35,6 +35,8 @@
 #include "DeltaGridStrategy.h"
 #include "CartGridStrategy.h"
 
+#include <vector>
+
 #define enable_checksum          CHECKSUM("enable")
 #define probe_pin_checksum       CHECKSUM("probe_pin")
 #define calibrate_pin_checksum   CHECKSUM("calibrate_pin")
@@ -424,6 +426,9 @@ void ZProbe::on_gcode_received(void *argument)
                 gcode->add_nl = true;
                 break;
 
+            case 460:
+                calibrate_probe_bore(gcode);
+                break;
             case 670:
                 if (gcode->has_letter('S')) this->slow_feedrate = gcode->get_value('S');
                 if (gcode->has_letter('K')) this->fast_feedrate = gcode->get_value('K');
@@ -682,9 +687,6 @@ void ZProbe::on_get_public_data(void* argument)
     }
 }
 
-
-
-
 void ZProbe::probe_bore(Gcode *gcode) //G38.10
 {
     THECONVEYOR->wait_for_idle();
@@ -696,7 +698,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     float x_axis_distance = 20;
     float y_axis_distance = 20;
     float roation_angle = 0;
-    bool repeat = false;
+    int repeat = 1;
     float retract_distance = 1.5;
     float clearance_height = 2;
 
@@ -745,7 +747,14 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     if (gcode->has_letter('S')) { //retract distance
         save_position = (gcode->get_value('S')!= 0);
     }
-    
+
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
+
 	//slow zprobe without alarm to probe_height. Skip if probe height is 0
 	if (probe_height != 0){
 		// do z probe with slow speed
@@ -804,7 +813,7 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
 
 
 	//setup repeat
-	for(int i=0; i< 1+ repeat; i++) {
+	for(int i=0; i< repeat; i++) {
 
         if (gcode->has_letter('X')) {
             // do positive x probe
@@ -936,8 +945,6 @@ void ZProbe::probe_bore(Gcode *gcode) //G38.10
     
 }
 
-
-
 void ZProbe::probe_boss(Gcode *gcode) //G38.11
 {
     THECONVEYOR->wait_for_idle();
@@ -949,10 +956,10 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
     float x_axis_distance = 20;
     float y_axis_distance = 20;
     float roation_angle = 0;
-    bool repeat = false;
+    int repeat = 1;
     float retract_distance = 1.5;
     float clearance_height = 2;
-    float side_depth = 5;
+    float side_depth = 2;
     float clearance_world_pos;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
@@ -1003,7 +1010,13 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
     if (gcode->has_letter('S')) { //retract distance
         save_position = (gcode->get_value('S')!= 0);
     }
-    
+
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
 	//slow zprobe without alarm to probe_height. Skip if probe height is 0
 	if (probe_height != 0){
 		// do z probe with slow speed
@@ -1063,7 +1076,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
 
 
 	//setup repeat
-	for(int i=0; i< 1+ repeat; i++) {
+	for(int i=0; i< repeat; i++) {
         
         //goto clearance height
         coordinated_move(NAN, NAN, clearance_world_pos, rapid_rate);
@@ -1286,7 +1299,7 @@ void ZProbe::probe_boss(Gcode *gcode) //G38.11
             //goto current center position
             coordinated_move(center_x, center_y, NAN, rapid_rate );
             THECONVEYOR->wait_for_idle();
-            THEKERNEL->probe_outputs[1] = sqrt((y_positive_x_out - y_negative_x_out) * (y_positive_x_out - y_negative_x_out) + (y_positive_y_out - y_negative_y_out) * (y_positive_y_out - y_negative_y_out) ) + tool_dia;
+            THEKERNEL->probe_outputs[1] = sqrt((y_positive_x_out - y_negative_x_out) * (y_positive_x_out - y_negative_x_out) + (y_positive_y_out - y_negative_y_out) * (y_positive_y_out - y_negative_y_out) ) - tool_dia;
             THEKERNEL->streams->printf("Distance Betweeen 2 Y surfaces (Diameter) is: %.3f and is stored at variable #152\n" , THEKERNEL->probe_outputs[1] );
         }
 
@@ -1313,7 +1326,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
     float x_axis_distance = 20;
     float y_axis_distance = 20;
     float roation_angle = 0;
-    bool repeat = false;
+    int repeat = 1;
 
     float retract_distance = 1.5;
     float clearance_height = 2;
@@ -1363,7 +1376,13 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
     if (gcode->has_letter('S')) { //retract distance
         save_position = (gcode->get_value('S')!= 0);
     }
-    
+
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
     
 	//slow zprobe without alarm to probe_height. Skip if probe height is 0
 	if (probe_height != 0){
@@ -1394,8 +1413,6 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
     
 	//output points
 	float x_positive_x_out = 0;
-	float x_positive_y_out = 0;
-	float y_positive_x_out = 0;
 	float y_positive_y_out = 0;
 
 
@@ -1416,7 +1433,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
 
 
 	//setup repeat
-	for(int i=0; i< 1+ repeat; i++) {
+	for(int i=0; i< repeat; i++) {
         float retractx = THEROBOT->from_millimeters((x_axis_distance>= 0 ? 1.0f : -1.0f) * -retract_distance * cos_angle);
         float retracty = THEROBOT->from_millimeters((x_axis_distance>= 0 ? 1.0f : -1.0f) * -retract_distance * sin_angle);
         // do positive x probe
@@ -1437,8 +1454,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         memcpy(old_mpos, mpos, sizeof(mpos));
         // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
         if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, true); // get inverse compensation transform
-        x_positive_x_out = old_mpos[0] + tool_dia  * cos_angle/ 2;
-        x_positive_y_out = old_mpos[1] + tool_dia * sin_angle / 2;
+        x_positive_x_out = old_mpos[0] - tool_dia  * cos_angle/ 2;
         //THEKERNEL->streams->printf("X: %.3f Y: %.3f\n", x_positive_x_out, x_positive_y_out);
 
         //goto current center position
@@ -1466,8 +1482,7 @@ void ZProbe::probe_insideCorner(Gcode *gcode) //G38.12
         memcpy(old_mpos, mpos, sizeof(mpos));
         // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
         if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, true); // get inverse compensation transform
-        y_positive_x_out = old_mpos[0] + ((y_axis_distance>= 0 ? 1.0f : -1.0f) * -retract_distance * sin_angle)/2;
-        y_positive_y_out = old_mpos[1] + ((y_axis_distance>= 0 ? 1.0f : -1.0f) * -retract_distance * -cos_angle)/2;
+        y_positive_y_out = old_mpos[1] - ((y_axis_distance>= 0 ? 1.0f : -1.0f) * -retract_distance * -cos_angle)/2;
         //THEKERNEL->streams->printf("X: %.3f Y: %.3f\n", y_positive_x_out, y_positive_y_out);
         //goto current center position
         coordinated_move(center_x, center_y, NAN, rapid_rate );
@@ -1505,10 +1520,10 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
     float x_axis_distance = 20;
     float y_axis_distance = 20;
     float roation_angle = 0;
-    bool repeat = false;
+    int repeat = 1;
     float retract_distance = 1.5;
     float clearance_height = 2;
-    float side_depth = 5;
+    float side_depth = 2;
     float clearance_world_pos;
 
     Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
@@ -1560,7 +1575,12 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         save_position = (gcode->get_value('S')!= 0);
     }
     
-    
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
 	//slow zprobe without alarm to probe_height. Skip if probe height is 0
 	if (probe_height != 0){
 		// do z probe with slow speed
@@ -1615,7 +1635,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
 
 
 	//setup repeat
-	for(int i=0; i< 1+ repeat; i++) {
+	for(int i=0; i< repeat; i++) {
         float retractx = THEROBOT->from_millimeters((x_axis_distance>= 0 ? 1.0f : -1.0f) * retract_distance * cos_angle);
         float retracty = THEROBOT->from_millimeters((x_axis_distance>= 0 ? 1.0f : -1.0f) * retract_distance * sin_angle);
         
@@ -1658,7 +1678,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
         if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, true); // get inverse compensation transform
 
-        x_positive_x_out = old_mpos[0] + (x_axis_distance>= 0 ? 1.0f : -1.0f) * retract_distance * cos_angle/ 2;
+        x_positive_x_out = old_mpos[0] - (x_axis_distance>= 0 ? 1.0f : -1.0f) *  tool_dia *  cos_angle/ 2;
         //THEKERNEL->streams->printf("X: %.3f Y: %.3f\n", x_positive_x_out, x_positive_y_out);
         //retract x_positive
         moveBuffer[0] = retractx;
@@ -1711,7 +1731,7 @@ void ZProbe::probe_outsideCorner(Gcode *gcode) //G38.13
         memcpy(old_mpos, mpos, sizeof(mpos));
         // current_position/mpos includes the compensation transform so we need to get the inverse to get actual position
         if(THEROBOT->compensationTransform) THEROBOT->compensationTransform(mpos, true, true); // get inverse compensation transform
-        y_positive_y_out = old_mpos[1] + (y_axis_distance>= 0 ? 1.0f : -1.0f) * tool_dia * sin_angle / 2;
+        y_positive_y_out = old_mpos[1] - (y_axis_distance>= 0 ? 1.0f : -1.0f) * tool_dia * sin_angle / 2;
         //THEKERNEL->streams->printf("X: %.3f Y: %.3f\n", y_positive_x_out, y_positive_y_out);
         //retract y_positive
         moveBuffer[0] = retractx;
@@ -1759,7 +1779,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
     float x_axis_distance = 20;
     float y_axis_distance = 20;
     float roation_angle = 0;
-    bool repeat = false;
+    int repeat = 1;
     float visualize_path_distance = 0;
     float retract_distance = 1.5;
     float clearance_height = 2;
@@ -1818,7 +1838,12 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
     if (gcode->has_letter('V')) { //visualize path
         visualize_path_distance = gcode->get_value('V');
     }
-
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
     
 	//slow zprobe without alarm to probe_height. Skip if probe height is 0
 	if (probe_height != 0){
@@ -1870,7 +1895,7 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
 
 
 	//setup repeat
-	for(int i=0; i< 1+ repeat; i++) {
+	for(int i=0; i< repeat; i++) {
         
         //goto clearance height
         //coordinated_move(NAN, NAN, clearance_world_pos, rapid_rate);
@@ -2040,8 +2065,8 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
             
             //calculate angle
             //inverse tan ( (Point 2 y - Point 1 Y) / (Point 2 x - point 1 X) )
-            THEKERNEL->probe_outputs[2] = atan ( ( y_positive_y_out - x_positive_y_out ) / (y_positive_x_out - x_positive_x_out));
-            THEKERNEL->streams->printf("Angle from X Axis is: %.3f degrees or %.3f radians and is stored in radians at variable #153\n" , THEKERNEL->probe_outputs[2] * 180 /pi , THEKERNEL->probe_outputs[2] );
+            THEKERNEL->probe_outputs[2] = atan ( ( y_positive_y_out - x_positive_y_out ) / (y_positive_x_out - x_positive_x_out) * 180 / pi);
+            THEKERNEL->streams->printf("Angle from X Axis is: %.3f degrees or %.3f radians and is stored in degrees at variable #153\n" , THEKERNEL->probe_outputs[2], THEKERNEL->probe_outputs[2] *pi / 180);
         }
 
 		
@@ -2058,3 +2083,83 @@ void ZProbe::probe_axisangle(Gcode *gcode) //G38.14
     }
 }
 
+void ZProbe::calibrate_probe_bore(Gcode *gcode)
+{
+    THECONVEYOR->wait_for_idle();
+    THEKERNEL->streams->printf("Probing Bore/Rectangular Pocket\n");
+    float feed_rate = 300;
+    float rapid_rate = 800;
+    float knownDiameter = 25;
+    float roation_angle = 0;
+    float rotation_offset_per_probe = 0;
+    int repeat = 1;
+    float retract_distance = 1.5;
+
+    Gcode *gcodeBuffer; // = static_cast<Gcode *>(argument);
+    char buff[100];
+
+    if (!gcode->has_letter('X') && !gcode->has_letter('Y') ) { //error if there is a problem
+        gcode->stream->printf("ALARM: Probe fail: No Radius Given\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
+
+    if (gcode->has_letter('Q')) { //roation of pocket
+        roation_angle = gcode->get_value('Q');
+    }
+    if (gcode->has_letter('F')) { //feed rate
+        feed_rate = gcode->get_value('F');
+    }
+    if (gcode->has_letter('K')) { //probe height above bore/disance to move down before probing
+        rapid_rate = gcode->get_value('K');
+    }
+    if (gcode->has_letter('L')) { //repeat touch off
+        repeat = gcode->get_value('L');
+    }
+    if (gcode->has_letter('R')) { //retract distance
+        retract_distance = gcode->get_value('R');
+    }
+        if (gcode->has_letter('X')) { //radius x
+        knownDiameter = gcode->get_value('X');
+    }
+    if (gcode->has_letter('Y')) { //radius y
+        knownDiameter = gcode->get_value('Y');
+    }
+    if (gcode->has_letter('I')) { //radius y
+        rotation_offset_per_probe = gcode->get_value('I');
+    }
+
+    if (repeat < 1){
+        gcode->stream->printf("ALARM: Probe fail: repeat value cannot be less than 1\n");
+        THEKERNEL->call_event(ON_HALT, nullptr);
+        THEKERNEL->set_halt_reason(PROBE_FAIL);
+        return;
+    }
+
+    vector<float> probe_position_stack;
+    
+
+    for(int i=0; i< repeat; i++) {
+        std::sprintf(buff, "G38.10 X%.3f Y%.3f F%.3f D0 Q%3f K%.3f R%3f", THEROBOT->from_millimeters(knownDiameter + 2), THEROBOT->from_millimeters(knownDiameter + 2), feed_rate,roation_angle,rapid_rate,retract_distance);
+        gcodeBuffer = new Gcode(buff, &StreamOutput::NullStream);
+        probe_bore(gcodeBuffer);
+        THECONVEYOR->wait_for_idle();
+        probe_position_stack.push_back(THEKERNEL->probe_outputs[0]);
+        probe_position_stack.push_back(THEKERNEL->probe_outputs[1]);
+        roation_angle += rotation_offset_per_probe;
+    }
+    
+    float sum = 0.0;
+    for (const auto& pos : probe_position_stack) {
+        sum += pos;
+    }
+    float ave = sum / (repeat * 2);
+    
+    THEKERNEL->streams->printf("Average bore diameter: %.3f\n", ave);
+    
+    THEKERNEL->probe_tip_diameter = knownDiameter - ave;
+    THEKERNEL->streams->printf("New Probe Tip Diameter is: %.3f\n", THEKERNEL->probe_tip_diameter);
+    THEKERNEL->streams->printf("This value is temporary \n and will neeed to be saved to the config file with \n config-set sd zprobe.probe_tip_diameter # \n");
+
+}
