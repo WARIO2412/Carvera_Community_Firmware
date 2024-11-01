@@ -964,6 +964,13 @@ void ATCHandler::on_gcode_received(void *argument)
 						tool_offset = cur_tool_mz - ref_tool_mz;
 						const float offset[3] = {0.0, 0.0, tool_offset};
 						THEROBOT->saveToolOffset(offset, cur_tool_mz);
+					}else{
+						THEKERNEL->eeprom_data->REFMZ = -10;
+						THEKERNEL->write_eeprom_data();
+						THEKERNEL->call_event(ON_HALT, nullptr);
+						THEKERNEL->set_halt_reason(MANUAL);
+						THEKERNEL->streams->printf("ERROR: warning, unexpected reference tool length found, reset machine then recalibrate tool\n");
+						return;
 					}
 				}
 				THEKERNEL->streams->printf("current tool offset [%.3f] , reference tool offset [%.3f]\n",cur_tool_mz,ref_tool_mz);
