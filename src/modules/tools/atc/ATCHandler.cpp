@@ -955,6 +955,18 @@ void ATCHandler::on_gcode_received(void *argument)
 					THEKERNEL->streams->printf("ERROR: No tool was set!\n");
 
 				}
+			} else if (gcode->subcode == 3) { //set current tool offset
+				
+				
+				if (gcode->has_letter('Z')) {
+					cur_tool_mz = gcode->get_value('Z');
+					if (ref_tool_mz < 0) {
+						tool_offset = cur_tool_mz - ref_tool_mz;
+						const float offset[3] = {0.0, 0.0, tool_offset};
+						THEROBOT->saveToolOffset(offset, cur_tool_mz);
+					}
+				}
+				THEKERNEL->streams->printf("current tool offset [%.3f] , reference tool offset [%.3f]\n",cur_tool_mz,ref_tool_mz);
 			} else if (gcode->subcode == 4) { //report current TLO
 				THEKERNEL->streams->printf("current tool offset [%.3f] , reference tool offset [%.3f]\n",cur_tool_mz,ref_tool_mz);
 			}
