@@ -948,6 +948,8 @@ void ATCHandler::on_gcode_received(void *argument)
 					THEKERNEL->streams->printf("ERROR: No tool was set!\n");
 
 				}
+			} else if (gcode->subcode == 4) { //report current TLO
+				THEKERNEL->streams->printf("current tool offset [%.3f] , reference tool offset [%.3f]\n",cur_tool_mz,ref_tool_mz);
 			}
 		} else if (gcode->m == 494) {
 			// control probe laser
