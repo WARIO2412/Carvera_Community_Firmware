@@ -390,7 +390,7 @@ void ZProbe::on_gcode_received(void *argument)
         } else {
             invert_probe = false;
         }
-        THEKERNEL->streams->printf("Probe Command Found %i \n",gcode->subcode);
+        
         if (gcode->subcode == 6) {
             calibrate_Z(gcode);
 
