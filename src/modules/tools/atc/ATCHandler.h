@@ -83,6 +83,8 @@ private:
     void fill_zprobe_abs_scripts();
     void fill_xyzprobe_scripts(float tool_dia, float probe_height);
 
+    //
+    void set_tlo_by_offset(float z_axis_offset);
 
     void fill_autolevel_scripts(float x_pos, float y_pos, float x_size, float y_size, int x_grids, int y_grids, float height);
     void fill_goto_origin_scripts(float x_pos, float y_pos);
