@@ -283,6 +283,28 @@ void MainButton::on_idle(void *argument)
 	    				THEKERNEL->set_sleeping(true);
 	    				THEKERNEL->call_event(ON_HALT, nullptr);
 	    			}
+					else if(this->long_press_enable == "Tool Change" ) {
+						struct SerialMessage message;
+						message.stream = THEKERNEL->streams;
+						message.line = 0;
+						message.message = "G4 P2";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+						message.line = 0;
+						message.message = "M490.2";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+						message.line = 0;
+						message.message = "G4 P2";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+						message.line = 0;
+						message.message = "M600";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+						message.line = 0;
+						message.message = "M490.1";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+						message.line = 0;
+						message.message = "M600";
+						THEKERNEL->call_event(ON_CONSOLE_LINE_RECEIVED, &message);
+	    			}
 
 // turn off 12V/24V power supply
 //    				this->switch_power_12(0);
