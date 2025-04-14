@@ -83,7 +83,7 @@ For smoothieware as a whole: the Smoothie firmware is free software developed by
 
 ### **License**
 Smoothieware is released under the GNU GPL v3, which you can find at http://www.gnu.org/licenses/gpl-3.0.en.html
-
+MRI is released under Apache 2.0, which you can find at https://www.apache.org/licenses/LICENSE-2.0
 
 ### **Other community resources: **
 
