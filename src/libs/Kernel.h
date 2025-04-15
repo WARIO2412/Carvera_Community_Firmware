@@ -17,6 +17,8 @@
 #include <array>
 #include <vector>
 #include <string>
+#include "modules/utils/wifi/WifiProvider.h"
+#include "libs/USBDevice/MSCFileSystem.h"
 
 // 9 WCS offsets
 #define MAX_WCS 9UL

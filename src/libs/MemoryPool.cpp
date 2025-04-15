@@ -77,6 +77,11 @@ MemoryPool::~MemoryPool()
 
 void* MemoryPool::alloc(size_t nbytes)
 {
+    // Instrumentation: print allocation size and both possible caller addresses for AHB0
+    // extern MemoryPool* _AHB0;
+    // if (this == _AHB0) {
+    //     printf("[AHB0] alloc size=%u caller0=%p caller1=%p\n", (unsigned)nbytes, __builtin_return_address(0), __builtin_return_address(1));
+    // }
     // nbytes = ceil(nbytes / 4) * 4
     if (nbytes & 3)
         nbytes += 4 - (nbytes & 3);
