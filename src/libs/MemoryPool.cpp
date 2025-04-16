@@ -99,17 +99,18 @@ void* MemoryPool::alloc(size_t nbytes)
             p->used = 1;
 
             // if there's free space at the end of this block
-            if (p->next > nsize)
+            // Ensure there's enough space for a new header plus minimal data (e.g., 4 bytes aligned)
+            if (p->next >= (nsize + sizeof(_poolregion) + 4)) // Check if remaining space is usable
             {
-                // q = p->next
+                // q points to the start of the remaining free space
                 _poolregion* q = (_poolregion*) (((uint8_t*) p) + nsize);
 
                 MDEBUG("\t\twriting header to %p (%+d) (%d)\n", q, offset(q), p->next - nsize);
                 // write a new block header into q
                 q->used = 0;
-                q->next = p->next - nsize;
+                q->next = p->next - nsize; // Size of the new free block
 
-                // set our next to point to it
+                // Update the size of the newly allocated block
                 p->next = nsize;
 
                 // sanity check
@@ -119,111 +120,208 @@ void* MemoryPool::alloc(size_t nbytes)
                     // this can only happen if something has corrupted our heap, since we should simply fail to find a free block if it's full
                     __debugbreak();
                 }
-            }
+            } // else: remaining space is too small to create a new block, so the allocated block takes it all (p->next remains unchanged)
 
             // then return the data region for the block
             return &p->data;
         }
 
+        // Check if we've reached the end of the pool without finding a suitable block
+        if (offset(p) + p->next >= size) {
+            break; // Reached the end of the pool structure
+        }
+
         // p = p->next
-        p = (_poolregion*) (((uint8_t*) p) + p->next);
+         _poolregion* next_p = (_poolregion*) (((uint8_t*) p) + p->next);
 
-        // make sure we don't walk off the end
-    } while (p < (_poolregion*) (((uint8_t*)base) + size));
+        // Safety check: avoid infinite loop or invalid pointers if pool metadata is corrupted
+        if (next_p >= (_poolregion*) (((uint8_t*) base) + size) || next_p <= p || next_p->next == 0 ) {
+             // Consider logging an error or handling corruption
+             break; // Exit loop if metadata seems corrupt
+        }
+        p = next_p;
 
-    // fell off the end of the region!
+    } while (1);
+
+    // fell off the end of the region or couldn't find a block!
     return NULL;
 }
 
 void MemoryPool::dealloc(void* d)
 {
-    _poolregion* p = (_poolregion*) (((uint8_t*) d) - sizeof(_poolregion));
-    p->used = 0;
-
-    MDEBUG("\tdeallocating %p (%+d, %db)\n", p, offset(p), p->next);
-
-    // combine next block if it's free
-    _poolregion* q = (_poolregion*) (((uint8_t*) p) + p->next);
-    if(q >= (_poolregion*) (((uint8_t*) base) + size)) {
-        // we are beyond the end of the pool, ie last block
+    // Check for null pointer deallocation
+    if (d == nullptr) {
+        MDEBUG("\tAttempted to dealloc a null pointer\n");
         return;
     }
 
-    if (q->used == 0)
-    {
-        MDEBUG("\t\tCombining with next free region at %p, new size is %d\n", q, p->next + q->next);
-
-        // sanity check
-        if (offset(q) > size)
-        {
-            // captain, we have a problem!
-            // this can only happen if something has corrupted our heap, since we should simply fail to find a free block if it's full
-            __debugbreak();
-        }
-
-        p->next += q->next;
+    // Check if the pointer is within the pool's bounds before calculating header address
+    if (!has(d)) {
+        MDEBUG("\tAttempted to dealloc pointer %p outside of pool %p bounds [%p, %p)\n", d, this, base, ((uint8_t*) base) + size);
+        // Optionally, could call ::free(d) here if that's the desired fallback, but risky.
+        // Or trigger an error/assert.
+        return;
     }
 
-    // walk the list to find previous block
-    q = (_poolregion*) base;
-    do {
-        // check if q is the previous block
-        if ((((uint8_t*) q) + q->next) == (uint8_t*) p) {
-            // q is the previous block.
-            if (q->used == 0)
-            { // if q is free
-                MDEBUG("\t\tCombining with previous free region at %p, new size is %d\n", q, p->next + q->next);
+    _poolregion* p = (_poolregion*) (((uint8_t*) d) - sizeof(_poolregion));
 
-                // combine!
-                q->next += p->next;
+    // Sanity check: Ensure calculated header is within bounds and looks plausible
+    if (((uint8_t*)p < (uint8_t*)base) || ((uint8_t*)p >= ((uint8_t*)base + size))) {
+        MDEBUG("\tCalculated header %p for data %p is outside pool bounds\n", p, d);
+        __debugbreak(); // Likely memory corruption
+        return;
+    }
 
-                // sanity check
-                if ((offset(p) + p->next) > size)
-                {
-                    // captain, we have a problem!
-                    // this can only happen if something has corrupted our heap, since we should simply fail to find a free block if it's full
-                    __debugbreak();
+    // Check if the block is already marked as free (double free)
+    if (p->used == 0) {
+        MDEBUG("\tAttempted double free on block at %p (%+d)\n", p, offset(p));
+        // __debugbreak(); // Optional: break on double free
+        return;
+    }
+
+    p->used = 0;
+    MDEBUG("\tdeallocating %p (%+d, %db)\n", p, offset(p), p->next);
+
+    // --- Coalesce with the next block --- 
+    _poolregion* q_next = (_poolregion*) (((uint8_t*) p) + p->next);
+
+    // Check if q_next is within the pool boundary before accessing its members
+    if(q_next < (_poolregion*) (((uint8_t*) base) + size)) {
+        // Now safe to check if the next block is free
+        if (q_next->used == 0)
+        {
+            MDEBUG("\t\tCombining with next free region at %p, new size is %d\n", q_next, p->next + q_next->next);
+            
+            // Sanity check before merging
+            if ((offset(p) + p->next + q_next->next) > size) {
+                 MDEBUG("\t\t\tERROR: Merge with next block would exceed pool size!\n");
+                 __debugbreak(); // Heap corruption likely
+            } else {
+                p->next += q_next->next; // Merge: increase current block's size
+            }
+        }
+    } else {
+         MDEBUG("\t\tReached end of pool, no next block to coalesce.\n");
+    }
+
+    // --- Coalesce with the previous block --- 
+    // Walk the list to find the block *before* p
+    _poolregion* q_prev = (_poolregion*) base;
+    while (q_prev < p) { // Iterate until we find the block whose 'next' points to p
+        _poolregion* potential_next = (_poolregion*) (((uint8_t*) q_prev) + q_prev->next);
+        
+        if (potential_next == p) { // Found the previous block (q_prev)
+            if (q_prev->used == 0) { // If the previous block is free
+                MDEBUG("\t\tCombining with previous free region at %p, new size is %d\n", q_prev, q_prev->next + p->next);
+                
+                // Sanity check before merging
+                if ((offset(q_prev) + q_prev->next + p->next) > size) {
+                    MDEBUG("\t\t\tERROR: Merge with previous block would exceed pool size!\n");
+                    __debugbreak(); // Heap corruption likely
+                } else {
+                    q_prev->next += p->next; // Merge: increase previous block's size
+                    // p is now merged into q_prev, no further action needed for p
                 }
             }
-
-            // we found previous block, return
-            return;
+            // Whether merged or not, we found the previous block and are done.
+            return; 
         }
 
-        // return if last block
-        if (offset(q) + q->next >= size)
-            return;
+        // Check for end condition or corruption before advancing q_prev
+        if (offset(q_prev) + q_prev->next >= size || q_prev->next <= sizeof(_poolregion)) {
+            MDEBUG("\t\tCould not find previous block for %p during backward coalesce check (end reached or corruption?).\n", p);
+            return; // Stop if we hit the end or see a bad size
+        }
 
-        // q = q->next
-        q = (_poolregion*) (((uint8_t*) q) + q->next);
+        // Move to the next block in the list
+        q_prev = potential_next;
 
-        // if some idiot deallocates our memory region while we're using it, strange things can happen.
-        // avoid an infinite loop in that case, however we'll still leak memory and may corrupt things
-        if (q->next == 0)
-            return;
-
-        // make sure we don't walk off the end
-    } while (q < (_poolregion*) (((uint8_t*) base) + size));
+        // Additional safety check for infinite loops
+        if (q_prev >= (_poolregion*) (((uint8_t*) base) + size) || q_prev->next == 0 ) {
+             MDEBUG("\t\tPool metadata might be corrupted during backward coalesce check. Aborting search.\n");
+             return;
+        }
+    }
+    // If loop finishes without returning, it means p was the first block, so no previous to merge with.
+     MDEBUG("\t\tBlock %p is the first block, no previous block to coalesce.\n", p);
 }
 
 void MemoryPool::debug(StreamOutput* str)
 {
     _poolregion* p = (_poolregion*) base;
-    uint32_t tot = 0;
-    uint32_t free = 0;
-    str->printf("Start: %ub MemoryPool at %p\n", size, p);
+    uint32_t total_used = 0;
+    uint32_t total_fragmented_free = 0;
+    uint32_t unallocated_at_end = 0; // Size of the last block if it's free and touches the end
+    str->printf("Start: %u MemoryPool at %p\n", size, p);
+
     do {
         str->printf("\tChunk at %p (%4lu): %s, %lu bytes\n", p, offset(p), (p->used?"used":"free"), p->next);
-        tot += p->next;
-        if (p->used == 0)
-            free += p->next;
-        if ((offset(p) + p->next >= size) || (p->next <= sizeof(_poolregion)))
-        {
-            str->printf("End: total %lub, free: %lub\n", tot, free);
-            return;
+
+        bool is_last_block = (offset(p) + p->next >= size);
+
+        if (p->used) {
+            total_used += p->next;
+        } else {
+            // If this free block is the very last one in the pool
+            if (is_last_block) {
+                 unallocated_at_end = p->next; // Attributing the final free block correctly
+            } else {
+                total_fragmented_free += p->next; // It's a free fragment somewhere in the middle
+            }
         }
-        p = (_poolregion*) (((uint8_t*) p) + p->next);
+
+        // Check loop termination condition
+        if (is_last_block || p->next <= sizeof(_poolregion)) {
+             break; // Reached end or invalid block size
+        }
+
+        // Move to the next block
+        _poolregion* next_p = (_poolregion*) (((uint8_t*) p) + p->next);
+
+        // Safety check: avoid infinite loop or going past end if pool metadata is corrupted
+        // Check if next_p is beyond the pool, not pointing forward, or has zero size
+        if (next_p >= (_poolregion*) (((uint8_t*) base) + size) || next_p <= p || next_p->next == 0 ) {
+             str->printf("WARNING: Pool metadata might be corrupted or inconsistent at block %p. Aborting debug walk.\n", p);
+             // Reset calculated values as they might be unreliable
+             total_used = 0;
+             total_fragmented_free = 0;
+             unallocated_at_end = 0;
+             break;
+        }
+        p = next_p;
+
     } while (1);
+
+    uint32_t total_free_calculated = total_fragmented_free + unallocated_at_end;
+
+    // Verify consistency check using the ->free() method which independently walks the list
+    uint32_t total_free_verified = this->free();
+    if (total_used + total_free_calculated != size && (total_used != 0 || total_fragmented_free != 0 || unallocated_at_end != 0)) {
+         str->printf("WARNING: Pool sizes calculated by debug walk don't add up! Used(%lu) + FragmentedFree(%lu) + Unallocated(%lu) != Size(%u)\n", total_used, total_fragmented_free, unallocated_at_end, size);
+         str->printf("         Using verified Total Free: %lu\n", total_free_verified);
+         // If inconsistent, trust the dedicated free() calculation unless it also mismatches
+         if (total_used + total_free_verified != size) {
+            str->printf("ERROR: Severe pool corruption suspected. Used + Verified Free != Size.\n");
+            // Keep calculated values but flag the severe error
+         } else {
+             // If verified free makes sense with used, adjust reported free components proportionally (or just report the verified total)
+             // For simplicity, just report the verified total free when inconsistent
+             total_fragmented_free = 0; // Mark as unknown due to inconsistency
+             unallocated_at_end = 0;    // Mark as unknown due to inconsistency
+             total_free_calculated = total_free_verified; // Trust the verified total
+         }
+    } else if (total_free_calculated != total_free_verified) {
+        // This case means (used + calculated_free == size) but (calculated_free != verified_free)
+        // This also indicates an inconsistency, likely in the debug walk logic vs free() logic.
+        str->printf("WARNING: Discrepancy between debug walk free count (%lu) and verified free count (%lu). Using verified count.\n", total_free_calculated, total_free_verified);
+        total_fragmented_free = 0; // Mark as unknown due to inconsistency
+        unallocated_at_end = 0;    // Mark as unknown due to inconsistency
+        total_free_calculated = total_free_verified; // Trust the verified total
+    }
+
+
+    str->printf("End: Pool Size %u, Used %lu, Fragmented Free %lu, Unallocated %lu, Total Free %lu\n",
+                size, total_used, total_fragmented_free, unallocated_at_end, total_free_calculated);
 }
 
 bool MemoryPool::has(void* p)
@@ -231,19 +329,33 @@ bool MemoryPool::has(void* p)
     return ((p >= base) && (p < (void*) (((uint8_t*) base) + size)));
 }
 
+// Calculates total free space by walking the list
 uint32_t MemoryPool::free()
 {
-    uint32_t free = 0;
-
+    uint32_t free_bytes = 0;
     _poolregion* p = (_poolregion*) base;
 
     do {
-        if (p->used == 0)
-            free += p->next;
-        if (offset(p) + p->next >= size)
-            return free;
-        if (p->next <= sizeof(_poolregion))
-            return free;
-        p = (_poolregion*) (((uint8_t*) p) + p->next);
+        if (p->used == 0) {
+            free_bytes += p->next; // Add the size of the free block
+        }
+
+        // Check for end condition or corruption before advancing p
+        if (offset(p) + p->next >= size || p->next <= sizeof(_poolregion)) {
+            break; // Reached end or invalid block size
+        }
+
+        _poolregion* next_p = (_poolregion*) (((uint8_t*) p) + p->next);
+        
+        // Safety check for corruption
+        if (next_p >= (_poolregion*) (((uint8_t*) base) + size) || next_p <= p || next_p->next == 0 ) {
+             // Log error if possible, but return calculated free so far
+             MDEBUG("Pool metadata corruption detected during free() calculation at block %p.\n", p);
+             break;
+        }
+        p = next_p;
+
     } while (1);
+
+    return free_bytes;
 }

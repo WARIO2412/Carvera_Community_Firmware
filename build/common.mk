@@ -38,6 +38,11 @@ else
 Q=
 endif
 
+GCC_VERSION := $(shell $(CXX) -dumpversion)
+GCC_MAJOR := $(shell echo $(GCC_VERSION) | cut -f1 -d.)
+GCC_MINOR := $(shell echo $(GCC_VERSION) | cut -f2 -d.)
+IS_GCC_10_3_OR_LATER := $(shell expr \( $(GCC_MAJOR) -gt 10 \) \| \( $(GCC_MAJOR) -eq 10 \& $(GCC_MINOR) -ge 3 \))
+
 
 # Default variables.
 SRC ?= .
@@ -197,7 +202,15 @@ GCFLAGS += -ffunction-sections -fdata-sections  -fno-exceptions -fno-delete-null
 GCFLAGS += $(patsubst %,-I%,$(INCDIRS))
 GCFLAGS += $(DEFINES)
 GCFLAGS += $(DEPFLAGS)
-GCFLAGS += -Wall -Wextra -Wno-unused-parameter -Wcast-align -Wpointer-arith -Wredundant-decls -Wcast-qual -Wcast-align
+GCFLAGS += -Wall -Wextra -Wno-unused-parameter -fomit-frame-pointer \
+ -Wpointer-arith -Wredundant-decls -Wcast-qual -Wcast-align
+
+ifeq ($(IS_GCC_10_3_OR_LATER),1)
+GCFLAGS += -fanalyzer-floop-unroll-and-jam \
+	-floop-interchange -fstack-clash-protection -mfix-cortex-m3-ldrd \
+ 	-ftree-vectorize -munaligned-access
+endif
+
 
 GPFLAGS += $(GCFLAGS) -fno-rtti -std=gnu++11
 
