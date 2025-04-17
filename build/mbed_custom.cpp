@@ -48,6 +48,10 @@ extern "C" void __libc_init_array(void);
 // extern "C" void exit(int ErrorCode);
 extern "C" void _start(void)
 {
+    // Initialize P1.14 (beep) pin as output and set it low
+    LPC_GPIO1->FIODIR |= (1 << 14);  // Set as output
+    LPC_GPIO1->FIOCLR = (1 << 14);   // Set low
+    
     int bssSize = (int)&__bss_end__ - (int)&__bss_start__;
     int mainReturnValue;
 

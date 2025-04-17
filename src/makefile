@@ -25,7 +25,7 @@ STACK_SIZE=3072
 # as a dedicated debug channel.  If you are using the USB based serial port for
 # the console then this should cause you no problems.  Set MRI_BREAK_ON_INIT to
 # 0 if you don't want to break into GDB at startup.
-ENABLE_DEBUG_MONITOR?=0
+ENABLE_DEBUG_MONITOR?=1
 
 # this is the default UART baud rate used if it is not set in config
 # it is also the baud rate used to report any errors found while parsing the config file
