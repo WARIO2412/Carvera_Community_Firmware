@@ -5,12 +5,6 @@
 // #include <cstdio>
 #include <cstdlib>
 
-#ifdef MEMDEBUG
-    #define MDEBUG(...) printf(__VA_ARGS__)
-#else
-    #define MDEBUG(...) do {} while (0)
-#endif
-
 class StreamOutput;
 
 /*
