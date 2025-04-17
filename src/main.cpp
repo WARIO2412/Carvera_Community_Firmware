@@ -159,7 +159,7 @@ void init() {
     // MSC File System Handler
     kernel->add_module( new(AHB) MSCFileSystem("ud") );
 
-    // Serial Console 2
+    // Serial Console handles IO with the wireless probe
     kernel->add_module( new(AHB) SerialConsole2() );
 
     kernel->add_module( new(AHB) MainButton() );

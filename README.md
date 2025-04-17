@@ -284,22 +284,34 @@ set history size 10000
 
 ## Attaching GDB
 
-Use the GDB in your toolchain. Symbols are available alongside the firmware binary
-at `LPC1768/main.elf`. 
-
 > [!IMPORTANT] 
 > Ensure that your `main.bin`, `main.elf`, and source code all line
 > up exactly. Otherwise you will have a very confusing debug experience.
 
+A script has been added to kick off GDB based on your detected toolchain.
+
+* macOS / Linux: [mri/gdb.sh](mri/gdb.sh)
+* Windows: [mri/gdb.ps1](mri/gdb.ps1)
+
 ```bash
-./gcc-arm-none-eabi/bin/arm-none-eabi-gdb LPC1768/main.elf --baud 115200 \
-    -ex "set target-charset ASCII" \
-    -ex "set remotelogfile mri.log" \
-    -ex "target remote <your serial dev>"
+# unix version
+./mri/gdb.sh <your-serial-device>
 ```
 
-`mri.log` contains a log of the read/write communication between GDB and the device. 
-This can be handy when verifying if the device stopped responding.
+If you omit the path to your serial device, the script will make an educated
+guess. It's best to just give it the right path :) 
+
+If you haven't set a GCC toolchain accessible in your `PATH`, the script will go
+looking for something sensible in the repo. If it finds multiple GCC toolchains
+it will pick the most recent one.
+
+The script automatically loads [mri/init.gdb](mri/init.gdb) which contains some
+helpful functions you might need while connected to the firmware. These are
+discussed below.
+
+The script will output `mri.log`, which contains a log of the read/write
+communication between GDB and the device. This can be handy when verifying if
+the device stopped responding.
 
 > [!WARNING]
 > Since the GCC 4.8 toolchain is old enough to go to the cinema by itself, at
@@ -307,37 +319,92 @@ This can be handy when verifying if the device stopped responding.
 > GDB is still GDB, and you can happily use a working GDB from a modern
 > toolchain to attach.
 
-## Handy GDB tips
-
-This isn't intended as a complete guide to GDB; the internet is full of great
-resources to learn the basics. AI assistants can be extremely helpful!
-
 ### Controlling execution
 
 * Hit `ctrl-c`. You will end up at whatever random instruction happened to be
   running at that moment.
-* Enable `halt_on_error_debug` to stop execution on HALT.
+* Enable the config variable `halt_on_error_debug` to stop execution on HALT.
 * Add a call to `__debugbreak` in your code. Don't use this for regular
   debugging (use breakpoints), instead use this as a kind of "assert" to stop
   execution in unexpected places.
-* Send `break` in the console over wifi
+* Send `break` in the console over WiFi.
 
 Note the debugger will also be triggered in the event of an unhandled signal
 like a segmentation fault.
 
-### Force restart
+## GDB helper commands
 
-Since you must have the watchdog disabled to get any work done in GDB, you need
-some way to recover from a crash or other situations where execution can't be
-continued, or when you can't reach the console over wifi.
+### `reset`
 
-Luckily the device's architecture lets you set a specific value to the AIR
-register in the SCB block to restart the device. As long as GDB is still able
-to talk to the device, you should be able to run:
+Run this command to force a soft reset of the device, similar to calling "reset"
+on the MDI console.
+
+Just `ctrl-c` GDB to have it break the connection, since it will need to be
+restarted. Re-run `target remote <port>`, or drop out and open the debugger
+again.
+
+### `enable-pool-trace`
+
+This command adds breakpoints to predefined symbols inside alloc and dealloc
+functions in [src/libs/MemoryPool.cpp](src/libs/MemoryPool.cpp). MemoryPool is a
+single contiguous area allocator that manages most of the SRAM region. SRAM is
+limited to 32K and is the lowest latency memory available on the LP1768. 
+
+Most modules are placed in dynamically allocated chunks in this region, while a
+handful of others (SD filesystem related) are statically placed there at compile
+time. Certain modules will continue to make calls to MemoryPool during their
+runtime.
+
+This GDB command is primarily useful with `ENABLE_DEBUG_MONITOR=1` because most
+activity happens during kernel and module initialization, and by capturing these
+logs from firmware boot it's possible to have a complete picture in the case of
+a post-initialization crash.
+
+After running this command, execute `continue`. Both alloc and dealloc
+breakpoints will output the pointer in question as well as its size. A backtrace
+is also logged to identify call sites. This should be enough data to catch
+pointer reuse, over-frees, pool exhaustion, and so on.
+
+### `smoothie-full-dump` and `smoothie-mini-dump`
+
+Borrowed from [Smoothieware](http://smoothieware.org/mri-debugging) these
+commands dump a variety of program state. 
+
+Especially in the case of the full dump, it's advisable to capture the output to
+a file:
 
 ```gdb
-set {uint32_t}0xE000ED0C = 0x05FA0004
+set logging file <some file>
 ```
+
+To avoid flooding the console, you can redirect all output to a file. Remember
+to disable this afterwards:
+
+```gdb
+set logging redirect on
+```
+
+### `hardfault-break` and `fault-info`
+
+`hardfault-break` plants a breakpoint on the MCU's `HardFault_Handler`.  
+Leave it enabled and any CPU fault (bus/usage/memory) will pause execution the
+instant it occurs, letting you inspect the exact crashing instruction.
+
+`fault-info` prints the four System Control Block registers the Cortex-M3
+records after a fault (`HFSR`, `CFSR`, `BFAR`, `MMFAR`).  
+Refer to the LPC176x User Manual (chapter 32) or ARM "Cortex-M3 Devices Generic
+User Guide" (section 4.3) for the meaning of each bit or address.
+
+Together these commands tell you whether a reset was triggered by your firmware
+(null pointer, invalid memory write, stack overflow, etc.) or something more
+serious such as corrupted memory that could point to hardware issues.
+
+Why not simply let GDB 'catch' the crash? On bare‑metal Cortex‑M parts there is
+no OS to raise a UNIX‑style segmentation fault.  Unless you set this breakpoint
+the CPU will dive into HardFault_Handler, trash the original register state,
+print a message, and usually reset before the debugger ever sees the real
+failure.  hardfault‑break stops execution **at the exact vector entry**,
+preserving the stacked PC/LR so you can see where things truly went wrong.
 
 ### Reconnecting
 
@@ -355,7 +422,8 @@ rapidly find a need for aliasing common commands and running pre-canned routines
 repeatedly.
 
 These can be placed in your `~/.gdbinit` or loaded from a file in GDB with
-`source`. 
+`source`. The aforementioned [mri/init.gdb](mri/init.gdb) functions are loaded
+for you and function similarly.
 
 ```gdb
 # alias commands
