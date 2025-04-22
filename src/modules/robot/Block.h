@@ -9,6 +9,7 @@
 
 #include <bitset>
 #include "ActuatorCoordinates.h"
+#include <cstdint>
 
 class Block {
     public:

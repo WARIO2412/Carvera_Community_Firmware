@@ -39,12 +39,34 @@ clean :
 	$Q $(REMOVE) *_tests_gcov$(EXE) $(QUIET)
 
 
-#  Names of tools for cross-compiling ARMv7-M binaries.
-ARMV7M_GCC := arm-none-eabi-gcc
-ARMV7M_GPP := arm-none-eabi-g++
-ARMV7M_AS  := arm-none-eabi-gcc
-ARMV7M_LD  := arm-none-eabi-g++
-ARMV7M_AR  := arm-none-eabi-ar
+# --- Toolchain Definition for MRI --- 
+# Check the origin of standard toolchain variables. If they are from make's defaults,
+# override them. Otherwise, respect environment/command line settings.
+# This allows the makefile to work correctly both standalone and when called from the top level.
+ifeq ($(origin CC), default)
+  CC = arm-none-eabi-gcc
+endif
+ifeq ($(origin CXX), default)
+  CXX = arm-none-eabi-g++
+endif
+# Note: MRI uses GCC for AS and G++ for LD, so check origins and set accordingly.
+ifeq ($(origin AS), default)
+  AS = arm-none-eabi-gcc
+endif
+ifeq ($(origin LD), default)
+  LD = arm-none-eabi-g++
+endif
+ifeq ($(origin AR), default)
+  AR = arm-none-eabi-ar
+endif
+
+# Use standard variables (potentially overridden above) if defined, otherwise default to arm-none-eabi tools
+# Define the MRI-specific tool variables based on the potentially corrected standard variables.
+ARMV7M_GCC = $(CC)
+ARMV7M_GPP = $(CXX)
+ARMV7M_AS  = $(AS) # Use the potentially corrected AS (defaults to arm-none-eabi-gcc)
+ARMV7M_LD  = $(LD) # Use the potentially corrected LD (defaults to arm-none-eabi-g++)
+ARMV7M_AR  = $(AR)
 
 #  Names of tools for compiling binaries to run on this host system.
 HOST_GCC := gcc
@@ -272,7 +294,7 @@ $(eval $(call make_board_library,STM32F411CE_BLACKPILL,libmri_stm32f411-blackpil
                                   cmsis/STM32F411xx))
 
 # All boards to be built for ARM target.
-ARM_BOARDS : $(ARM_BOARD_LIBS)
+ARM_BOARDS : $(ARMV7M_MBED1768_1_LIB)
 
 
 # *** Pattern Rules ***

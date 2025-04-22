@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include "cmsis.h"
 #include "platform_memory.h"
+#include <cstdint>
 
 /*
  * constructors

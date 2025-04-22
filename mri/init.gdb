@@ -4,7 +4,8 @@ set print pretty on
 set pagination off
 set remotelogfile mri.log
 set mem inaccessible-by-default off
-
+set logging file debug.log
+set logging enabled on
 
 # ---------- MemoryPool::alloc trace (non‑blocking) ----------
 
@@ -12,8 +13,10 @@ break memorypool_alloc_return_point
 commands
     silent
     printf "[ALLOC] %6lu B  -> %p\n", $r1, $r0
+    p *_ahb
     bt
     printf "\n\n"
+    x/24xw 0x20080f74
     continue
 end
 disable $bpnum
@@ -24,28 +27,42 @@ break memorypool_free_hook
 commands
     silent
     printf "[FREE ] %6lu B  <- %p\n", $r1, $r0
+    p *_ahb
     bt
     printf "\n\n"
+    x/24xw 0x20080f74
     continue
 end
 disable $bpnum
 set $bp_free = $bpnum
 
+# ---------- MemoryPool debug values (disabled by default) --------
+break memorypool_debug_hook
+commands
+    silent
+    printf "[DEBUG] offset(p)=%lu, p->next=%lu, q_next->next=%lu, size=%lu\n", $r0, $r1, $r2, $r3
+    p *_ahb
+    bt
+    printf "\n\n"
+    x/24xw 0x20080f74
+    continue
+end
+disable $bpnum
+set $bp_debug = $bpnum
+
 # ---------- Toggle trace helpers -----------------------------------
 define enable-pool-trace
-    enable $bp_alloc $bp_free
+    enable $bp_alloc $bp_free $bp_debug
     echo MemoryPool trace ENABLED\n
 end
 
 define disable-pool-trace
-    disable $bp_alloc $bp_free
+    disable $bp_alloc $bp_free $bp_debug
     echo MemoryPool trace DISABLED\n
 end
 
 # ---------- Crash‑dump helpers -------------------------------------
 define smoothie-full-dump
-    set pagination off
-    set logging on
     echo \n===== FULL DUMP =====\n
     bt
     info registers
@@ -58,13 +75,10 @@ define smoothie-full-dump
         set $ptr += 16
     end
     echo ===== END DUMP =====\n
-    set logging off
     set pagination on
 end
 
 define smoothie-mini-dump
-    set pagination off
-    set logging on
     echo \n===== MINI DUMP =====\n
     bt
     info registers
@@ -76,8 +90,6 @@ define smoothie-mini-dump
         set $ptr += 16
     end
     echo ===== END MINI DUMP =====\n
-    set logging off
-    set pagination on
 end
 
 # ---------- Quick chip‑reset command -------------------------------

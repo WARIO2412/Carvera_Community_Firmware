@@ -2066,7 +2066,7 @@ void SimpleShell::test_command( string parameters, StreamOutput *stream)
         }
 
         uint32_t sps= strtol(stepspersec.c_str(), NULL, 10);
-        sps= std::max(sps, 1UL);
+        sps= std::max(sps, static_cast<uint32_t>(1UL));
 
         uint32_t delayus= 1000000.0F / sps;
         for(int s= 0;s<steps;s++) {

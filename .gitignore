@@ -44,3 +44,6 @@ win_install.log
 **/.DS_Store
 .vscode
 gcc-arm-none-eabi*
+.analzyer
+.analyzer/**
+.cursor
