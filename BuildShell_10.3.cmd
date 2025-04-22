@@ -4,4 +4,4 @@ REM SET LPC_DEPLOY=copy PROJECT.bin f:\
 
 SET PATH=%~dp0\build\win32;%PATH%
 
-@cmd.exe /K gccvar.bat
+@cmd.exe /K

@@ -38,11 +38,18 @@ else
 Q=
 endif
 
+# GCC Version detection - different approach for Windows vs Unix
+ifeq "$(OS)" "Windows_NT"
+# For Windows, check if version is 10.3+ or 11+ using findstr
+GCC_VERSION := $(shell $(CXX) -dumpversion)
+IS_GCC_10_3_OR_LATER := $(shell $(CXX) -dumpversion | findstr /b "10.[3-9] 10.[1-9][0-9] 11. 12. 13." >nul && echo 1 || echo 0)
+else
+# Unix version detection
 GCC_VERSION := $(shell $(CXX) -dumpversion)
 GCC_MAJOR := $(shell echo $(GCC_VERSION) | cut -f1 -d.)
 GCC_MINOR := $(shell echo $(GCC_VERSION) | cut -f2 -d.)
 IS_GCC_10_3_OR_LATER := $(shell expr \( $(GCC_MAJOR) -gt 10 \) \| \( $(GCC_MAJOR) -eq 10 \& $(GCC_MINOR) -ge 3 \))
-
+endif
 
 # Default variables.
 SRC ?= .
