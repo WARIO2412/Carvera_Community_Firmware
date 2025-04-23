@@ -349,6 +349,14 @@ Write-Host "Executing command with GCC $requestedGccVersion in PATH: $($CommandT
 $originalPath = $env:PATH
 $pathSeparator = [System.IO.Path]::PathSeparator
 $env:PATH = "$gccBinPath$pathSeparator$originalPath" # Prepend GCC path using correct separator
+
+if ($IsWindows) {
+    # Add build/win32 to PATH
+    $win32Path = Join-Path $ProjectRoot "build/win32"
+    if (Test-Path $win32Path -PathType Container) {
+        $env:PATH = "$win32Path$pathSeparator$env:PATH"
+    }
+}
 $exitCode = 0
 
 try {

@@ -98,9 +98,12 @@ if ($PSVersionTable.PSEdition -eq "Desktop" -or
     [System.Environment]::OSVersion.Platform -eq "Win32NT") {
     # Running on Windows
     $cpuCount = ""
+    # Check if running on Windows first before using $IsWindows
+    $script:IsWindows = $true
     Write-Host "Running on Windows, processor count not set because it's buggy." -ForegroundColor Cyan
 } else {
     # Running on non-Windows system
+    $script:IsWindows = $false
     $cpuCount = [Environment]::ProcessorCount
     Write-Host "Using $cpuCount parallel jobs for make." -ForegroundColor Cyan
 }
