@@ -92,10 +92,20 @@ if ($Help) {
 # Determine GCC version to use
 $requestedGccVersion = if ($PSBoundParameters.ContainsKey('GccVersion')) { $GccVersion } else { $DefaultGccVersion }
 
-# Determine CPU count for parallelism
-$cpuCount = [Environment]::ProcessorCount
+# Determine CPU count for parallelism - empty on Windows
+if ($PSVersionTable.PSEdition -eq "Desktop" -or 
+    ($PSVersionTable.PSVersion.Major -ge 6 -and $PSVersionTable.Platform -eq "Win32NT") -or
+    [System.Environment]::OSVersion.Platform -eq "Win32NT") {
+    # Running on Windows
+    $cpuCount = ""
+    Write-Host "Running on Windows, processor count not set because it's buggy." -ForegroundColor Cyan
+} else {
+    # Running on non-Windows system
+    $cpuCount = [Environment]::ProcessorCount
+    Write-Host "Using $cpuCount parallel jobs for make." -ForegroundColor Cyan
+}
+
 Write-Host "Using GCC version: $requestedGccVersion" -ForegroundColor Cyan
-Write-Host "Using $cpuCount parallel jobs for make." -ForegroundColor Cyan
 if ($Clean) {
     Write-Host "Will run 'make clean' first." -ForegroundColor Cyan
 }
