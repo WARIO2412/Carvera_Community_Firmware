@@ -65,9 +65,16 @@ ifeq ($(strip $(CXX)),)
   $(error CXX is not defined. Cannot determine compiler version.)
 endif
 GCC_VERSION := $(shell $(CXX) -dumpversion)
+# GCC Version detection - different approach for Windows vs Unix
+ifeq "$(OS)" "Windows_NT"
+# For Windows, check if version is 10.3+ or 11+ using findstr
+IS_GCC_10_3_OR_LATER := $(shell echo $(GCC_VERSION) | findstr /b "10.[3-9] 10.[1-9][0-9] 11. 12. 13. 14." >nul && echo 1 || echo 0)
+else
+# Unix version detection
 GCC_MAJOR := $(shell echo $(GCC_VERSION) | cut -f1 -d.)
 GCC_MINOR := $(shell echo $(GCC_VERSION) | cut -f2 -d.)
 IS_GCC_10_3_OR_LATER := $(shell echo $(GCC_VERSION) | awk -F. '{ if ($$1 > 10 || ($$1 == 10 && $$2 >= 3)) print 1; else print 0; }')
+endif
 export IS_GCC_10_3_OR_LATER
 # --- End Toolchain Definition ---
 

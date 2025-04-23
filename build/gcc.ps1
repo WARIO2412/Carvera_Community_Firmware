@@ -273,6 +273,16 @@ function Check-Gcc {
 
     # Return the absolute path to the bin directory
     # --- Post-install/Verification Checks ---
+    # Check if running on Windows first before using $IsWindows
+    if (-not (Get-Variable -Name IsWindows -ErrorAction SilentlyContinue)) {
+        # $IsWindows not defined (older PowerShell versions)
+        $script:IsWindows = $PSVersionTable.PSEdition -eq "Desktop" -or 
+                   ($PSVersionTable.PSVersion.Major -ge 6 -and
+                    $PSVersionTable.Platform -eq "Win32NT") -or
+                   [System.Environment]::OSVersion.Platform -eq "Win32NT"
+    }
+    # Now $IsWindows is safely defined, either as automatic variable or script-scoped variable
+    
     $gccExeName = if ($IsWindows) { 'arm-none-eabi-g++.exe' } else { 'arm-none-eabi-g++' }
     $gccToolPath = Join-Path $gccBinPath $gccExeName
     if (-not (Test-Path $gccToolPath -PathType Leaf)) {
@@ -339,6 +349,14 @@ Write-Host "Executing command with GCC $requestedGccVersion in PATH: $($CommandT
 $originalPath = $env:PATH
 $pathSeparator = [System.IO.Path]::PathSeparator
 $env:PATH = "$gccBinPath$pathSeparator$originalPath" # Prepend GCC path using correct separator
+
+if ($IsWindows) {
+    # Add build/win32 to PATH
+    $win32Path = Join-Path $ProjectRoot "build/win32"
+    if (Test-Path $win32Path -PathType Container) {
+        $env:PATH = "$win32Path$pathSeparator$env:PATH"
+    }
+}
 $exitCode = 0
 
 try {
