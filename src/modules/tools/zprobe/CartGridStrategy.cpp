@@ -161,6 +161,8 @@ bool CartGridStrategy::handleConfig()
     // we use a different file format depending on whether it is square or not
     this->new_file_format= true;
 
+    this->force_debug = false;
+
     tolerance = THEKERNEL->config->value(leveling_strategy_checksum, cart_grid_leveling_strategy_checksum, tolerance_checksum)->by_default(0.03F)->as_number();
     save = THEKERNEL->config->value(leveling_strategy_checksum, cart_grid_leveling_strategy_checksum, save_checksum)->by_default(false)->as_bool();
     do_home = THEKERNEL->config->value(leveling_strategy_checksum, cart_grid_leveling_strategy_checksum, do_home_checksum)->by_default(true)->as_bool();
@@ -474,7 +476,6 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
             return true;
 
         }else if(gcode->g == 33) { // G33: Perform flex measurement and enable compensation
-            THEKERNEL->streams->printf("G33: Perform flex measurement and enable compensation\n");
             // Wait for empty queue
             THEKERNEL->conveyor->wait_for_idle();
 
@@ -485,7 +486,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
 
             THEROBOT->disable_segmentation = true;
             if(!doFlexMeasurement(gcode)) {
-                gcode->stream->printf("Flex measurement failed to complete, check the initial probe height and/or initial_height settings\n");
+                gcode->stream->printf("Flex measurement failed to complete\n");
             } else {
                 gcode->stream->printf("Flex measurement completed and compensation enabled.\n");
             }
@@ -913,6 +914,9 @@ void CartGridStrategy::doCompensation(float *target, bool inverse, bool debug)
         } else {
             target[Y_AXIS] = target[Y_AXIS] + y_component;
             target[Z_AXIS] = target[Z_AXIS] - z_component;
+            if (this->force_debug) {
+                THEKERNEL->streams->printf("//DEBUG: FLEX COMPENSATION: X:%f, DeltaY:%f, DeltaZ: %f\n", target[0], y_component, z_component);
+            }
         }
     }
 
@@ -977,7 +981,7 @@ void CartGridStrategy::doCompensation(float *target, bool inverse, bool debug)
     }
 
     if (debug) {
-        THEKERNEL->streams->printf("//DEBUG: TARGET: %f, %f, %f\n", target[0], target[1], target[2]);
+        THEKERNEL->streams->printf("//DEBUG: NEW TARGET: %f, %f, %f\n", target[0], target[1], target[2]);
         if(flex_compensation_active) {
             THEKERNEL->streams->printf("//DEBUG: Flex compensation active (applied first)\n");
         }
@@ -1044,10 +1048,8 @@ void CartGridStrategy::reset_bed_level()
 // Flex compensation methods
 bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
 {
-    gc->stream->printf("Flex Compensation Measurement...\n");
-    gc->stream->printf("Disabling old flex compensation...\n");
-    flex_compensation_active = false;
-    updateCompensationTransform();
+    gc->stream->printf("Reset old flex compensation data...\n");
+    reset_flex_compensation();
 
     // Parse G33 parameters
     float y_coordinate = 0.0F;
@@ -1077,6 +1079,16 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
         return false;
     }
 
+    int repeat = 1;
+    if(gc->has_letter('L') && gc->get_int('L') > 1) {
+        repeat = gc->get_value('L');
+    }
+
+    bool debug = false;
+    if(gc->has_letter('D')) {
+        debug = true;
+    }
+
     if(this->flex_x_size <= 0 || num_points <= 0) {
         gc->stream->printf("ERROR: X and I parameters must be positive\n");
         return false;
@@ -1104,19 +1116,6 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
     this->flex_x_start = current_x;
 
     gc->stream->printf("Starting flex measurement at current position: X%1.3f Y%1.3f Z%1.3f\n", current_x, current_y, current_z);
-    gc->stream->printf("Parameters: Y coordinate=%1.3f, X distance=%1.3f, Points=%d\n", y_coordinate, this->flex_x_size, num_points);
-
-    // Allocate array for storing delta values
-    float *delta_array = (float *)AHB.alloc(num_points * sizeof(float));
-    if(delta_array == nullptr) {
-        gc->stream->printf("ERROR: Not enough memory for delta array\n");
-        return false;
-    }
-
-    // Initialize array
-    for(int i = 0; i < num_points; i++) {
-        delta_array[i] = NAN;
-    }
 
     // First measurement as reference
     float reference_y = 0.0F;
@@ -1130,58 +1129,82 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
     params.y_axis_distance = y_coordinate;
     params.feed_rate = (gc->has_letter('F')) ? gc->get_value('F') : 600;
     params.rapid_rate = (gc->has_letter('R')) ? gc->get_value('R') : 800;
-
-    // Probe at each point along X-axis
-    for(int i = 0; i < num_points; i++) {
-        float probe_x = current_x + (i * x_step);
-        
-        gc->stream->printf("Probing point %d: X%1.3f\n", i, probe_x);
-        zprobe->coordinated_move(probe_x, NAN, NAN, params.rapid_rate / 60);
-        
-        // Use ZProbe's internal fast_slow_probe_sequence for Y-axis
-        zprobe->fast_slow_probe_sequence_public(Y_AXIS, 1); // Probe in positive Y direction
-        
-        // Get the result from ZProbe's output coordinates
-        xy_output_coordinates& coords = zprobe->get_output_coordinates();
-        float measured_y = coords.y_positive_y_out;
-        
-        if(isnan(measured_y)) {
-            gc->stream->printf("ERROR: Failed to probe at point %d\n", i);
-            AHB.dealloc(delta_array);
-            return false;
+    
+    for(int r = 1; r <= repeat; r++) {
+        zprobe->coordinated_move(current_x, current_y, NAN, params.rapid_rate / 60);
+        // Probe at each point along X-axis
+        for(int i = 0; i < num_points; i++) {
+            float probe_x = current_x + (i * x_step);
+            zprobe->coordinated_move(probe_x, NAN, NAN, params.rapid_rate / 60);
+            
+            // Use ZProbe's internal fast_slow_probe_sequence for Y-axis
+            zprobe->fast_slow_probe_sequence_public(Y_AXIS, 1); // Probe in positive Y direction
+            
+            // Get the result from ZProbe's output coordinates
+            xy_output_coordinates& coords = zprobe->get_output_coordinates();
+            float measured_y = coords.y_positive_y_out;
+            
+            if(isnan(measured_y)) {
+                gc->stream->printf("ERROR: Failed to probe at point %d\n", i);
+                return false;
+            }
+            
+            if (i == 0){
+                reference_y = measured_y;
+            }
+            // Calculate delta from reference
+            float delta = measured_y - reference_y;
+            if (r > 1) {
+                flex_compensation_data[i] = (delta / cos(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f)))) / r + flex_compensation_data[i] * (r - 1) / r;
+            }else{
+                flex_compensation_data[i] = delta / cos(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))) ;
+            }
+            
+            if (fabs(delta) > fabs(max_delta)) {
+                max_delta = delta;
+            }
+            
+            gc->stream->printf("RUN: %d | POINT: %d | PROBED Y: %1.3f, DELTA Y: %1.3f | TOTAL AVG DEFLECTION: %1.3f\n", r, i, measured_y, delta, flex_compensation_data[i]);
         }
-        
-        if (i == 0){
-            reference_y = measured_y;
-        }
-        gc->stream->printf("Reference Y value: %1.3f mm\n", reference_y);
-        // Calculate delta from reference
-        float delta = measured_y - reference_y;
-        delta_array[i] = delta / cos(atan(triangle_y_int / triangle_z_int));
-        if (fabs(delta) > fabs(max_delta)) {
-            max_delta = delta;
-        }
-        
-        gc->stream->printf("Point %d: measured=%1.3f, delta=%1.3f\n", i, measured_y, delta);
     }
-
-    for (int i = 0; i < flex_x_points; i++) {
-        if (i < flex_current_x_points) {
-            flex_compensation_data[i] = delta_array[i];
-        } else {
-            flex_compensation_data[i] = 0.0;
-        }
-        gc->stream->printf("Stored flex_compensation_data[%d] = %1.6f\n", i, flex_compensation_data[i]);
+    if (repeat > 1) {
+        gc->stream->printf("--- Average flex compensation data (x, (y+z)) ---\n");
+    }else{
+        gc->stream->printf("--- Flex compensation data (x, (y+z)) ---\n");
     }
-
-    AHB.dealloc(delta_array);
-
-    gc->stream->printf("Flex measurement completed. Delta array stored.\n");
+    for (int i = 0; i < flex_current_x_points; i++) {
+        gc->stream->printf("%1.3f, %1.3f\n", this->flex_x_start + (i * (this->flex_x_size / (num_points - 1))), flex_compensation_data[i]);
+    }
+    if (repeat > 1) {
+        gc->stream->printf("--- Average delta Y measurement (x, y) ---\n");
+    }else{
+        gc->stream->printf("--- Delta Y measurement (x, y) ---\n");
+    }
+    for (int i = 0; i < flex_current_x_points; i++) {
+        gc->stream->printf("%1.3f, %1.3f\n", this->flex_x_start + (i * (this->flex_x_size / (num_points - 1))), flex_compensation_data[i] * cos(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))));
+    }
+    if (repeat > 1) {
+        gc->stream->printf("--- Average delta Z calculation (x, z) ---\n");
+    }else{
+        gc->stream->printf("--- Delta Z calculation (x, z) ---\n");
+    }
+    for (int i = 0; i < flex_current_x_points; i++) {
+        gc->stream->printf("%1.3f, %1.3f\n", this->flex_x_start + (i * (this->flex_x_size / (num_points - 1))), flex_compensation_data[i] * sin(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))));
+    }
 
     flex_compensation_active = true;
     updateCompensationTransform();
+    gc->stream->printf("Flex measurement completed and activated\n");
     flex_max_delta = max_delta;
-
+    if(debug) {
+        this->force_debug = true;
+        for (int i = num_points - 1; i >= 0; i--) {
+            float probe_x = current_x + (i * x_step);
+            gc->stream->printf("Debug move to %1.3f\n", probe_x);
+            zprobe->coordinated_move(probe_x, NAN, NAN, params.rapid_rate / 60);
+        }
+        this->force_debug = false;
+    }
     return true;
 }
 
@@ -1335,9 +1358,7 @@ bool CartGridStrategy::load_flex_compensation_data(StreamOutput *stream)
 
 void CartGridStrategy::reset_flex_compensation()
 {
-    for (int x = 0; x < flex_x_points; x++) {
-        flex_compensation_data[x] = NAN;
-    }
+    memset(flex_compensation_data, 0, flex_x_points * sizeof(float));
     flex_compensation_active = false;
     flex_current_x_points = 0;
     flex_max_delta = 0.0F;
