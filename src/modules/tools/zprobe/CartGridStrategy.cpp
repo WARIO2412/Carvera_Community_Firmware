@@ -132,6 +132,8 @@
 #define GRIDFILE_NM "/sd/cartesian_nm.grid"
 #define FLEX_COMPENSATION_FILE "/sd/flex_compensation.dat"
 
+#define FLEX_COMPENSATION_VERSION 1
+
 #define PI 3.14159265358979323846F
 
 CartGridStrategy::CartGridStrategy(ZProbe *zprobe) : LevelingStrategy(zprobe)
@@ -533,7 +535,7 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 }
             }
             return true;
-        } else if(gcode->m == 380) { // M380: Disable flex compensation, M380.1: Display data, M380.2: Save, M380.3: Load
+        } else if(gcode->m == 380) { // M380: Disable flex compensation, M380.1: Display data, M380.2: Save, M380.3: Load, M380.4: Delete
             if(gcode->subcode == 1) {
                 // Display current flex compensation data
                 print_flex_compensation_data(gcode->stream);
@@ -548,6 +550,18 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                     flex_compensation_active = true;
                     updateCompensationTransform();
                 }
+            } else if(gcode->subcode == 4) {
+                // Delete flex compensation data
+                remove(FLEX_COMPENSATION_FILE);
+                gcode->stream->printf("Flex compensation data deleted\n");
+            }else if(gcode->subcode == 5) {
+                // Enable Debugging
+                this->force_debug = true;
+                gcode->stream->printf("Flex compensation debugging enabled\n");
+            }else if(gcode->subcode == 6) {
+                // Disable Debugging
+                this->force_debug = false;
+                gcode->stream->printf("Flex compensation debugging disabled\n");
             } else {
                 // Disable flex compensation only
                 flex_compensation_active = false;
@@ -1253,6 +1267,15 @@ void CartGridStrategy::save_flex_compensation_data(StreamOutput *stream)
         return;
     }
 
+    float version = (float)(FLEX_COMPENSATION_VERSION);
+
+    // Write version (float)
+    if(fwrite(&version, sizeof(float), 1, fp) != 1) {
+        stream->printf("error: Failed to write version\n");
+        fclose(fp);
+        return;
+    }
+
     // Write flex_x_start (float)
     if(fwrite(&flex_x_start, sizeof(float), 1, fp) != 1) {
         stream->printf("error: Failed to write flex_x_start\n");
@@ -1300,6 +1323,22 @@ bool CartGridStrategy::load_flex_compensation_data(StreamOutput *stream)
     float load_flex_x_start;
     uint8_t load_flex_current_x_points;
     float load_flex_x_size;
+
+    float version;
+
+    // Read version (float)
+    if(fread(&version, sizeof(float), 1, fp) != 1) {
+        stream->printf("error: Failed to read version\n");
+        fclose(fp);
+        return false;
+    }
+
+    if(version != (float)(FLEX_COMPENSATION_VERSION) || version < 0) {
+        stream->printf("error: Invalid flex compensation version %f\n", version);
+        stream->printf("error: Please delete the flex compensation file (M380.4) and try again\n");
+        fclose(fp);
+        return false;
+    }
 
     // Read flex_x_start (float)
     if(fread(&load_flex_x_start, sizeof(float), 1, fp) != 1) {
