@@ -142,7 +142,6 @@ CartGridStrategy::CartGridStrategy(ZProbe *zprobe) : LevelingStrategy(zprobe)
     flex_compensation_data = nullptr;
     flex_compensation_active = false;
     flex_data_size = 0;
-    flex_max_delta = 0.0F;
     cartesian_grid_active = false;
     flex_compensation_always_active = false;
 }
@@ -258,6 +257,9 @@ bool CartGridStrategy::handleConfig()
     if(flex_compensation_always_active) {
         if(load_flex_compensation_data(THEKERNEL->streams)) {
             flex_compensation_active = true;
+            updateCompensationTransform();
+        }else{
+            flex_compensation_active = false;
             updateCompensationTransform();
         }
     }
@@ -548,6 +550,9 @@ bool CartGridStrategy::handleGcode(Gcode *gcode)
                 // Load flex compensation data
                 if (load_flex_compensation_data(gcode->stream)) {
                     flex_compensation_active = true;
+                    updateCompensationTransform();
+                }else{
+                    flex_compensation_active = false;
                     updateCompensationTransform();
                 }
             } else if(gcode->subcode == 4) {
@@ -920,7 +925,7 @@ void CartGridStrategy::doCompensation(float *target, bool inverse, bool debug)
             }
         }
 
-        z_trans = interpolated_delta * (rod_distance_int / 10000.0f);
+        z_trans = 0.5f * interpolated_delta * (rod_distance_int / (2.0f *10000.0f));
 
         // The data has been normalized to a radius of 1.0 so we need to multiply by the triangle length to get the actual distance for the rotational components
         interpolated_delta = interpolated_delta * triangle_length_float;
@@ -1076,7 +1081,6 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
     float y_coordinate = 0.0F;
     float x_distance = 0.0F;
     int num_points = 0;
-    float max_delta = 0.0F;
 
     if(gc->has_letter('Y')) {
         y_coordinate = gc->get_value('Y');
@@ -1183,10 +1187,6 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
                 flex_compensation_data[i] = delta / (triangle_length_float * cos(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))));
             }
             
-            if (fabs(delta) > fabs(max_delta)) {
-                max_delta = delta;
-            }
-            
             gc->stream->printf("RUN: %d | POINT: %d | X: %1.3f | PROBED Y: %1.3f, DELTA Y: %1.3f\n", r, i, probe_x, measured_y, delta);
         }
     }
@@ -1218,7 +1218,6 @@ bool CartGridStrategy::doFlexMeasurement(Gcode *gc)
     flex_compensation_active = true;
     updateCompensationTransform();
     gc->stream->printf("Flex measurement completed and activated\n");
-    flex_max_delta = max_delta;
     if(debug) {
         this->force_debug = true;
         for (int i = num_points - 1; i >= 0; i--) {
@@ -1267,7 +1266,7 @@ void CartGridStrategy::print_flex_compensation_data(StreamOutput *stream)
     
     THEKERNEL->streams->printf("--- Average delta Z calculation at current Z height (x, z) ---\n");
     for (int i = 0; i < flex_current_x_points; i++) {
-        THEKERNEL->streams->printf("%1.3f, %1.3f\n", this->flex_x_start + (i * (this->flex_x_size / (flex_current_x_points - 1))), flex_compensation_data[i] * sin(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))) * triangle_length_float + (flex_compensation_data[i] * (rod_distance_int / 10000.0f)));
+        THEKERNEL->streams->printf("%1.3f, %1.3f\n", this->flex_x_start + (i * (this->flex_x_size / (flex_current_x_points - 1))), flex_compensation_data[i] * sin(atan((triangle_y_int / 10000.0f) / (triangle_z_int / 10000.0f))) * triangle_length_float + (0.5 * flex_compensation_data[i] * (rod_distance_int / (2.0f * 10000.0f))));
     }
     return;
 }
@@ -1371,7 +1370,11 @@ bool CartGridStrategy::load_flex_compensation_data(StreamOutput *stream)
     }
 
     if(version != (float)(FLEX_COMPENSATION_VERSION) || version < 0) {
-        stream->printf("error: Invalid flex compensation version %f\n", version);
+        if(version > 0) {
+            stream->printf("error: Invalid flex compensation version %f\n", version);
+        }else{
+            stream->printf("error: Invalid flex compensation version\n", version);
+        }
         stream->printf("error: Please delete the flex compensation file (M380.4) and try again\n");
         fclose(fp);
         return false;
@@ -1437,6 +1440,5 @@ void CartGridStrategy::reset_flex_compensation()
     memset(flex_compensation_data, 0, flex_x_points * sizeof(float));
     flex_compensation_active = false;
     flex_current_x_points = 0;
-    flex_max_delta = 0.0F;
     updateCompensationTransform();
 }

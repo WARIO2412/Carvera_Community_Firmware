@@ -78,7 +78,6 @@ private:
     float flex_x_size;
     bool flex_compensation_active;
     size_t flex_data_size;
-    float flex_max_delta;
     bool flex_compensation_always_active;
 
     // Compensation state tracking
